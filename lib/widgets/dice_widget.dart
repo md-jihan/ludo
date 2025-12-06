@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,82 +14,68 @@ class DiceWidget extends StatefulWidget {
   State<DiceWidget> createState() => _DiceWidgetState();
 }
 
-class _DiceWidgetState extends State<DiceWidget> with TickerProviderStateMixin {
-  late AnimationController _spinController;
-  late AnimationController _landController;
-  late Animation<double> _xLand, _yLand, _zLand;
+class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateMixin {
+  // Animation Controller for the spin effect
+  late AnimationController _controller;
 
-  // These variables remember the "Previous" position so rotation is continuous
-  double _x = 0;
-  double _y = 0;
-  double _z = 0;
-
-  bool _isWaitingForServer = false;
+  Timer? _animTimer;
+  int _displayValue = 1;
+  bool _isRolling = false;
   int _lastServerDiceValue = 0;
-  final double _size = 60.0;
 
   @override
   void initState() {
     super.initState();
-    _spinController = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
-    _landController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
-
-    _xLand = AlwaysStoppedAnimation(0);
-    _yLand = AlwaysStoppedAnimation(0);
-    _zLand = AlwaysStoppedAnimation(0);
+    // Configure a fast spin animation (0.5 seconds per rotation)
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
   }
 
   @override
   void dispose() {
-    _spinController.dispose();
-    _landController.dispose();
+    _animTimer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
-  void _startVisualSpin() {
-    if (!_isWaitingForServer) {
-      if(mounted) setState(() => _isWaitingForServer = true);
-      _spinController.repeat();
-    }
+  // --- 1. START ANIMATION ---
+  void _startRollingAnim() {
+    if (_isRolling) return;
+
+    setState(() {
+      _isRolling = true;
+    });
+
+    // A. Start Physical Spin
+    _controller.repeat();
+
+    // B. Start Number Flipping (Visual Chaos)
+    _animTimer?.cancel();
+    _animTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
+      if (mounted) {
+        setState(() {
+          _displayValue = Random().nextInt(6) + 1;
+        });
+      }
+    });
   }
 
-  void _landOn(int targetNumber) {
-    _spinController.stop();
-
-    // 1. Determine Target Rotation (Precise Math)
-    double tx = 0, ty = 0;
-    switch (targetNumber) {
-      case 2: ty = -pi / 2; break;
-      case 3: ty = pi / 2; break;
-      case 4: tx = -pi / 2; break;
-      case 5: tx = pi / 2; break;
-      case 6: tx = pi; break;
-    // Case 1 is 0,0
-    }
-
-    // 2. Calculate smooth path from CURRENT spin to TARGET
-    double currentSpin = _spinController.value * 2 * pi;
-
-    // Add 4 full spins (4*2pi) to ensure it looks like it's slowing down
-    double endX = tx + (8 * pi);
-    double endY = ty + (8 * pi);
+  // --- 2. STOP ANIMATION ---
+  void _stopRollingAnim(int finalValue) {
+    _animTimer?.cancel();
 
     if (mounted) {
+      // Stop the controller and reset rotation to 0 (Upright)
+      _controller.stop();
+      _controller.value = 0;
+
       setState(() {
-        _isWaitingForServer = false;
-        // Start from _x + currentSpin (The Previous Position)
-        _xLand = Tween<double>(begin: _x + currentSpin, end: endX).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
-        _yLand = Tween<double>(begin: _y + currentSpin, end: endY).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
-        _zLand = Tween<double>(begin: _z + currentSpin, end: 0).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
+        _isRolling = false;
+        _displayValue = finalValue; // Show real server number
       });
     }
-
-    _landController.forward(from: 0).then((_) {
-      // Normalize values to keep them manageable for the next roll
-      _x = endX % (2 * pi);
-      _y = endY % (2 * pi);
-      _z = 0;
-    });
   }
 
   @override
@@ -101,12 +88,15 @@ class _DiceWidgetState extends State<DiceWidget> with TickerProviderStateMixin {
           // A. SERVER SENT ROLL
           if (game.diceValue != 0 && game.diceValue != _lastServerDiceValue) {
             _lastServerDiceValue = game.diceValue;
-            _landOn(game.diceValue);
+            _stopRollingAnim(game.diceValue);
           }
 
-          // B. TURN RESET (The critical fix)
+          // B. TURN RESET
           if (game.diceValue == 0) {
             _lastServerDiceValue = 0;
+            if (_isRolling) {
+              _stopRollingAnim(_displayValue);
+            }
           }
         }
       },
@@ -117,106 +107,92 @@ class _DiceWidgetState extends State<DiceWidget> with TickerProviderStateMixin {
           final game = state.gameModel;
           final isMyTurn = game.players[game.currentTurn]['id'] == widget.myPlayerId;
           final diceIsReset = game.diceValue == 0;
+          final canRoll = isMyTurn && diceIsReset && !_isRolling;
 
-          // --- FIX: LOGIC RESYNC ---
-          // If the server says "Dice is 0" (Reset), we MUST NOT be waiting.
-          // This ensures the dice works 100% of the time for the 2nd roll.
-          if (diceIsReset && _isWaitingForServer) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _isWaitingForServer = false;
-                  _spinController.stop();
-                });
-              }
-            });
-          }
-
-          final canRoll = isMyTurn && diceIsReset && !_isWaitingForServer;
-
-          // Visual Color: White = Active, Grey = Locked
-          Color diceColor = canRoll ? Colors.white : Colors.grey[400]!;
+          // Visual Styles
+          final Color boxColor = canRoll ? Colors.white : Colors.grey[300]!;
+          final Color dotColor = canRoll ? Colors.black : Colors.grey[600]!;
 
           return GestureDetector(
             onTap: () {
-              if (canRoll) {
-                _startVisualSpin();
-                context.read<GameBloc>().add(RollDice(game.gameId));
-              } else if (!isMyTurn) {
+              if (!isMyTurn) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Not your turn!")));
-              } else if (!diceIsReset) {
+                return;
+              }
+              if (!diceIsReset) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Move your pawn first!")));
+                return;
+              }
+
+              if (canRoll) {
+                _startRollingAnim();
+                context.read<GameBloc>().add(RollDice(game.gameId));
               }
             },
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_spinController, _landController]),
-              builder: (context, child) {
-                double rx, ry, rz;
-                if (_isWaitingForServer) {
-                  // WILD SPINNING
-                  double val = _spinController.value * 2 * pi;
-                  rx = val; ry = val; rz = val;
-                } else {
-                  // LANDING / RESTING
-                  rx = _xLand.value; ry = _yLand.value; rz = _zLand.value;
-                }
-
-                return Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()..setEntry(3, 2, 0.001)..rotateX(rx)..rotateY(ry)..rotateZ(rz),
-                  child: Stack(
-                    children: [
-                      // Pass the dynamic color to faces
-                      _face(1, 0, 0, diceColor), _face(6, pi, 0, diceColor),
-                      _face(3, 0, -pi/2, diceColor), _face(2, 0, pi/2, diceColor),
-                      _face(4, -pi/2, 0, diceColor), _face(5, pi/2, 0, diceColor),
-                    ],
-                  ),
-                );
-              },
+            // Apply Rotation Animation to the Container
+            child: RotationTransition(
+              turns: _controller, // Binds rotation to controller
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: boxColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[700]!, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 5,
+                      offset: const Offset(2, 2),
+                    )
+                  ],
+                ),
+                child: CustomPaint(
+                  painter: _DotPainter(_displayValue, dotColor),
+                ),
+              ),
             ),
           );
         },
       ),
     );
   }
-
-  Widget _face(int n, double rx, double ry, Color color) {
-    return Transform(
-      alignment: Alignment.center,
-      transform: Matrix4.identity()..rotateX(rx)..rotateY(ry)..translate(0.0, 0.0, _size / 2),
-      child: Container(
-        width: _size, height: _size,
-        decoration: BoxDecoration(
-            color: color,
-            border: Border.all(color: Colors.grey[700]!, width: 1.5),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, spreadRadius: 1)
-            ]
-        ),
-        child: CustomPaint(painter: _DotPainter(n)),
-      ),
-    );
-  }
 }
 
 class _DotPainter extends CustomPainter {
-  final int n;
-  _DotPainter(this.n);
+  final int number;
+  final Color color;
+
+  _DotPainter(this.number, this.color);
+
   @override
-  void paint(Canvas c, Size s) {
-    final p = Paint()..color = Colors.black;
-    double r = s.width/9, m = s.width/2, l = s.width/4, R = s.width*0.75;
-    List<Offset> d = [];
-    if(n%2!=0) d.add(Offset(m,m));
-    if(n>1) d.addAll([Offset(l,l), Offset(R,R)]);
-    if(n>3) d.addAll([Offset(l,R), Offset(R,l)]);
-    if(n==6) d.addAll([Offset(l,m), Offset(R,m)]);
-    for(var o in d) c.drawCircle(o, r, p);
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()..color = color;
+    double r = size.width / 10;
+    double c = size.width / 2;
+    double l = size.width / 4;
+    double m = size.width * 0.75;
+
+    List<Offset> dots = [];
+    switch (number) {
+      case 1: dots = [Offset(c, c)]; break;
+      case 2: dots = [Offset(l, l), Offset(m, m)]; break;
+      case 3: dots = [Offset(l, l), Offset(c, c), Offset(m, m)]; break;
+      case 4: dots = [Offset(l, l), Offset(m, l), Offset(l, m), Offset(m, m)]; break;
+      case 5: dots = [Offset(l, l), Offset(m, l), Offset(c, c), Offset(l, m), Offset(m, m)]; break;
+      case 6: dots = [Offset(l, l), Offset(m, l), Offset(l, c), Offset(m, c), Offset(l, m), Offset(m, m)]; break;
+      default: dots = [Offset(c, c)];
+    }
+
+    for (var d in dots) {
+      canvas.drawCircle(d, r, paint);
+    }
   }
+
   @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
+  bool shouldRepaint(covariant _DotPainter oldDelegate) {
+    return oldDelegate.number != number || oldDelegate.color != color;
+  }
 }
