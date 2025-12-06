@@ -25,10 +25,14 @@ class GameBoard extends StatelessWidget {
         builder: (context, state) {
           if (state is GameLoaded) {
             final game = state.gameModel;
+// 1. Get current player data
+            final currentPlayer = game.players[game.currentTurn];
+            final String turnColor = currentPlayer['color'];
+            final String turnName = currentPlayer['name'] ?? turnColor; // Fallback to Color if name missing
 
             return Column(
               children: [
-                // 1. Status Bar
+                // Status Bar
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
                   color: Colors.white,
@@ -40,10 +44,10 @@ class GameBoard extends StatelessWidget {
                         children: [
                           const TextSpan(text: "Waiting for "),
                           TextSpan(
-                            text: "${game.players[game.currentTurn]['color']}'s",
+                            text: "$turnName's", // <--- SHOWS NAME HERE
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: _getColor(game.players[game.currentTurn]['color']),
+                              color: _getColor(turnColor), // Name is colored by their team color
                               fontSize: 24,
                             ),
                           ),
@@ -53,7 +57,6 @@ class GameBoard extends StatelessWidget {
                     ),
                   ),
                 ),
-
                 // 2. Board
                 Expanded(
                   child: Center(
