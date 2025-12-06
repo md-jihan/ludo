@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "807645963966",
+    "project_id": "ludo-master-c623a",
+    "storage_bucket": "ludo-master-c623a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:807645963966:android:54a203e5b577e96b1d20ef",
+        "android_client_info": {
+          "package_name": "com.example.ludo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhorGSXspoalk6EV-r5gyDl7fv0h-9BOA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
