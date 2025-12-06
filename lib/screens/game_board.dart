@@ -143,7 +143,19 @@ class _GameBoardState extends State<GameBoard> {
                     ),
 
                     const Spacer(),
-
+// --- DEBUG INFO (Remove later) ---
+                    Container(
+                      color: Colors.black54,
+                      padding: const EdgeInsets.all(4),
+                      child: Text(
+                        "MyID: ...${widget.userId.substring(widget.userId.length - 4)}\n"
+                            "Turn PlayerID: ...${currentPlayer['id'].substring(currentPlayer['id'].length - 4)}\n"
+                            "Dice Value: ${game.diceValue}\n"
+                            "Is My Turn? ${currentPlayer['id'] == widget.userId}",
+                        style: const TextStyle(color: Colors.white, fontSize: 10),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                     // D. WOODEN CONTROLS AREA
                     Container(
                       height: 140,

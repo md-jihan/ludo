@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,79 +7,87 @@ import '../blocs/game/game_state.dart';
 
 class DiceWidget extends StatefulWidget {
   final String myPlayerId;
-
   const DiceWidget({super.key, required this.myPlayerId});
 
   @override
   State<DiceWidget> createState() => _DiceWidgetState();
 }
 
-class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _rotationAnimation;
-  late Animation<double> _scaleAnimation;
+class _DiceWidgetState extends State<DiceWidget> with TickerProviderStateMixin {
+  late AnimationController _spinController;
+  late AnimationController _landController;
+  late Animation<double> _xLand, _yLand, _zLand;
 
-  int _displayValue = 1; // Value shown WHILE rolling
-  bool _isAnimating = false;
-  Timer? _rollTimer;
+  // These variables remember the "Previous" position so rotation is continuous
+  double _x = 0;
+  double _y = 0;
+  double _z = 0;
+
+  bool _isWaitingForServer = false;
   int _lastServerDiceValue = 0;
+  final double _size = 60.0;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
+    _spinController = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
+    _landController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
 
-    // Spin 360 degrees (2 * pi) multiple times
-    _rotationAnimation = Tween<double>(begin: 0, end: 4 * pi).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.fastOutSlowIn),
-    );
-
-    // bounce effect (shrink then grow)
-    _scaleAnimation = SequenceAnimationBuilder<double>()
-        .addAnim(begin: 1.0, end: 0.8, duration: const Duration(milliseconds: 200), curve: Curves.easeIn)
-        .addAnim(begin: 0.8, end: 1.2, duration: const Duration(milliseconds: 400), curve: Curves.easeOut)
-        .addAnim(begin: 1.2, end: 1.0, duration: const Duration(milliseconds: 200), curve: Curves.elasticOut)
-        .build(_controller);
+    _xLand = AlwaysStoppedAnimation(0);
+    _yLand = AlwaysStoppedAnimation(0);
+    _zLand = AlwaysStoppedAnimation(0);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _rollTimer?.cancel();
+    _spinController.dispose();
+    _landController.dispose();
     super.dispose();
   }
 
-  void _runRollAnimation(int finalValue) {
-    if (_isAnimating) return;
+  void _startVisualSpin() {
+    if (!_isWaitingForServer) {
+      if(mounted) setState(() => _isWaitingForServer = true);
+      _spinController.repeat();
+    }
+  }
 
-    setState(() {
-      _isAnimating = true;
-    });
+  void _landOn(int targetNumber) {
+    _spinController.stop();
 
-    _controller.forward(from: 0).then((_) {
-      // Animation Finished
-      if (mounted) {
-        setState(() {
-          _isAnimating = false;
-          _displayValue = finalValue;
-        });
-      }
-    });
+    // 1. Determine Target Rotation (Precise Math)
+    double tx = 0, ty = 0;
+    switch (targetNumber) {
+      case 2: ty = -pi / 2; break;
+      case 3: ty = pi / 2; break;
+      case 4: tx = -pi / 2; break;
+      case 5: tx = pi / 2; break;
+      case 6: tx = pi; break;
+    // Case 1 is 0,0
+    }
 
-    // While animating, rapidly change the number displayed
-    _rollTimer?.cancel();
-    _rollTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
-      if (_controller.isCompleted) {
-        timer.cancel();
-      } else {
-        setState(() {
-          // Show random values while spinning
-          _displayValue = Random().nextInt(6) + 1;
-        });
-      }
+    // 2. Calculate smooth path from CURRENT spin to TARGET
+    double currentSpin = _spinController.value * 2 * pi;
+
+    // Add 4 full spins (4*2pi) to ensure it looks like it's slowing down
+    double endX = tx + (8 * pi);
+    double endY = ty + (8 * pi);
+
+    if (mounted) {
+      setState(() {
+        _isWaitingForServer = false;
+        // Start from _x + currentSpin (The Previous Position)
+        _xLand = Tween<double>(begin: _x + currentSpin, end: endX).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
+        _yLand = Tween<double>(begin: _y + currentSpin, end: endY).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
+        _zLand = Tween<double>(begin: _z + currentSpin, end: 0).animate(CurvedAnimation(parent: _landController, curve: Curves.easeOutBack));
+      });
+    }
+
+    _landController.forward(from: 0).then((_) {
+      // Normalize values to keep them manageable for the next roll
+      _x = endX % (2 * pi);
+      _y = endY % (2 * pi);
+      _z = 0;
     });
   }
 
@@ -91,25 +98,13 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
         if (state is GameLoaded) {
           final game = state.gameModel;
 
-          // Detect if dice value CHANGED in Firebase (someone rolled)
+          // A. SERVER SENT ROLL
           if (game.diceValue != 0 && game.diceValue != _lastServerDiceValue) {
             _lastServerDiceValue = game.diceValue;
-
-            // If *I* rolled, the button press started animation.
-            // If *someone else* rolled, we need to trigger animation now.
-            if (game.diceRolledBy != widget.myPlayerId) {
-              _runRollAnimation(game.diceValue);
-            } else {
-              // Ensure we land on the correct final value
-              // (The local animation might still be spinning random numbers)
-              Future.delayed(const Duration(milliseconds: 500), () {
-                if (mounted) _rollTimer?.cancel();
-                setState(() => _displayValue = game.diceValue);
-              });
-            }
+            _landOn(game.diceValue);
           }
 
-          // If turn reset to 0, reset our display too (optional)
+          // B. TURN RESET (The critical fix)
           if (game.diceValue == 0) {
             _lastServerDiceValue = 0;
           }
@@ -121,32 +116,63 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
 
           final game = state.gameModel;
           final isMyTurn = game.players[game.currentTurn]['id'] == widget.myPlayerId;
-          final canRoll = isMyTurn && game.diceValue == 0; // Only roll if dice is 0 (reset)
+          final diceIsReset = game.diceValue == 0;
+
+          // --- FIX: LOGIC RESYNC ---
+          // If the server says "Dice is 0" (Reset), we MUST NOT be waiting.
+          // This ensures the dice works 100% of the time for the 2nd roll.
+          if (diceIsReset && _isWaitingForServer) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _isWaitingForServer = false;
+                  _spinController.stop();
+                });
+              }
+            });
+          }
+
+          final canRoll = isMyTurn && diceIsReset && !_isWaitingForServer;
+
+          // Visual Color: White = Active, Grey = Locked
+          Color diceColor = canRoll ? Colors.white : Colors.grey[400]!;
 
           return GestureDetector(
             onTap: () {
-              if (canRoll && !_isAnimating) {
-                // 1. Start Visual Animation immediately
-                _runRollAnimation(0); // 0 means "don't stop on specific number yet"
-
-                // 2. Tell Server to Calculate Logic
+              if (canRoll) {
+                _startVisualSpin();
                 context.read<GameBloc>().add(RollDice(game.gameId));
+              } else if (!isMyTurn) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Not your turn!")));
+              } else if (!diceIsReset) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Move your pawn first!")));
               }
             },
             child: AnimatedBuilder(
-              animation: _controller,
+              animation: Listenable.merge([_spinController, _landController]),
               builder: (context, child) {
-                return Transform.rotate(
-                  angle: _rotationAnimation.value,
-                  child: Transform.scale(
-                    scale: _scaleAnimation.value,
-                    child: CustomPaint(
-                      painter: _DicePainter(
-                        number: _isAnimating ? _displayValue : (game.diceValue == 0 ? _displayValue : game.diceValue),
-                        color: canRoll ? Colors.white : Colors.grey[300]!, // Dim if disabled
-                      ),
-                      size: const Size(60, 60),
-                    ),
+                double rx, ry, rz;
+                if (_isWaitingForServer) {
+                  // WILD SPINNING
+                  double val = _spinController.value * 2 * pi;
+                  rx = val; ry = val; rz = val;
+                } else {
+                  // LANDING / RESTING
+                  rx = _xLand.value; ry = _yLand.value; rz = _zLand.value;
+                }
+
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..setEntry(3, 2, 0.001)..rotateX(rx)..rotateY(ry)..rotateZ(rz),
+                  child: Stack(
+                    children: [
+                      // Pass the dynamic color to faces
+                      _face(1, 0, 0, diceColor), _face(6, pi, 0, diceColor),
+                      _face(3, 0, -pi/2, diceColor), _face(2, 0, pi/2, diceColor),
+                      _face(4, -pi/2, 0, diceColor), _face(5, pi/2, 0, diceColor),
+                    ],
                   ),
                 );
               },
@@ -156,100 +182,41 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
       ),
     );
   }
-}
 
-// --- 3D PAINTER CLASS ---
-class _DicePainter extends CustomPainter {
-  final int number;
-  final Color color;
-
-  _DicePainter({required this.number, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
-    final Paint paint = Paint();
-
-    // 1. Draw Shadow (to give it depth)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          Rect.fromLTWH(4, 4, w, h),
-          const Radius.circular(12)
+  Widget _face(int n, double rx, double ry, Color color) {
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()..rotateX(rx)..rotateY(ry)..translate(0.0, 0.0, _size / 2),
+      child: Container(
+        width: _size, height: _size,
+        decoration: BoxDecoration(
+            color: color,
+            border: Border.all(color: Colors.grey[700]!, width: 1.5),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, spreadRadius: 1)
+            ]
+        ),
+        child: CustomPaint(painter: _DotPainter(n)),
       ),
-      Paint()..color = Colors.black.withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
-
-    // 2. Draw Main Box (The Dice)
-    paint.color = color;
-    final RRect box = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), const Radius.circular(12));
-    canvas.drawRRect(box, paint);
-
-    // 3. Draw "3D" Edge Highlight (Top/Left light)
-    final Paint highlight = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.white.withOpacity(0.5);
-    canvas.drawPath(
-        Path()..moveTo(0, h)..lineTo(0, 0)..lineTo(w, 0),
-        highlight
-    );
-
-    // 4. Draw "3D" Edge Shadow (Bottom/Right dark)
-    final Paint shadow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = Colors.black.withOpacity(0.1);
-    canvas.drawPath(
-        Path()..moveTo(0, h)..lineTo(w, h)..lineTo(w, 0),
-        shadow
-    );
-
-    // 5. Draw Dots
-    _drawDots(canvas, size);
   }
-
-  void _drawDots(Canvas canvas, Size size) {
-    final Paint dotPaint = Paint()..color = Colors.black;
-    final double r = size.width / 10; // Dot radius
-    final double c = size.width / 2; // Center
-    final double l = size.width / 4; // Left/Top
-    final double m = size.width * 0.75; // Right/Bottom
-
-    final List<Offset> dots = [];
-
-    switch (number) {
-      case 1: dots.add(Offset(c, c)); break;
-      case 2: dots.addAll([Offset(l, l), Offset(m, m)]); break;
-      case 3: dots.addAll([Offset(l, l), Offset(c, c), Offset(m, m)]); break;
-      case 4: dots.addAll([Offset(l, l), Offset(m, l), Offset(l, m), Offset(m, m)]); break;
-      case 5: dots.addAll([Offset(l, l), Offset(m, l), Offset(c, c), Offset(l, m), Offset(m, m)]); break;
-      case 6: dots.addAll([Offset(l, l), Offset(m, l), Offset(l, c), Offset(m, c), Offset(l, m), Offset(m, m)]); break;
-      default: dots.add(Offset(c, c)); // Fallback
-    }
-
-    // Draw dots with slight indentation effect
-    for (var dot in dots) {
-      // Inner shadow for hole look
-      canvas.drawCircle(dot, r, dotPaint);
-      canvas.drawCircle(dot, r * 0.8, Paint()..color = const Color(0xFF212121)); // Darker center
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DicePainter oldDelegate) => oldDelegate.number != number || oldDelegate.color != color;
 }
 
-// Simple sequence animation helper
-class SequenceAnimationBuilder<T> {
-  // (Simplified implementation for readability)
-  Animation<double> build(AnimationController controller) {
-    return TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.7), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.7, end: 1.1), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0), weight: 30),
-    ]).animate(controller);
+class _DotPainter extends CustomPainter {
+  final int n;
+  _DotPainter(this.n);
+  @override
+  void paint(Canvas c, Size s) {
+    final p = Paint()..color = Colors.black;
+    double r = s.width/9, m = s.width/2, l = s.width/4, R = s.width*0.75;
+    List<Offset> d = [];
+    if(n%2!=0) d.add(Offset(m,m));
+    if(n>1) d.addAll([Offset(l,l), Offset(R,R)]);
+    if(n>3) d.addAll([Offset(l,R), Offset(R,l)]);
+    if(n==6) d.addAll([Offset(l,m), Offset(R,m)]);
+    for(var o in d) c.drawCircle(o, r, p);
   }
-  // Ignore the addAnim method in this simplified snippet to fit one file, using standard TweenSequence above.
-  SequenceAnimationBuilder addAnim({required double begin, required double end, required Duration duration, required Curve curve}) { return this; }
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }
