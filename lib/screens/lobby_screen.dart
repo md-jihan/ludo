@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // <--- REQUIRED for Clipboard
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/game/game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
+import 'game_board.dart';
 
-// --- THIS IMPORT WAS MISSING ---
-import '../screens/game_board.dart';
 class LobbyScreen extends StatefulWidget {
   final String gameId;
   final String userId;
@@ -20,7 +20,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
   @override
   void initState() {
     super.initState();
-    // Start listening to the specific game ID
     context.read<GameBloc>().add(LoadGame(widget.gameId));
   }
 
@@ -28,19 +27,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Widget build(BuildContext context) {
     return BlocConsumer<GameBloc, GameState>(
       listener: (context, state) {
-        if (state is GameLoaded) {
-          // If status changes to 'playing', navigate to board
-          if (state.gameModel.status == 'playing') {
-            Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => GameBoard( // <--- Now this class is found!
-                        gameId: widget.gameId,
-                        userId: widget.userId
-                    )
-                )
-            );
-          }
+        if (state is GameLoaded && state.gameModel.status == 'playing') {
+          Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => GameBoard(
+                      gameId: widget.gameId,
+                      userId: widget.userId
+                  )
+              )
+          );
         }
       },
       builder: (context, state) {
@@ -49,14 +45,27 @@ class _LobbyScreenState extends State<LobbyScreen> {
         if (state is GameLoaded) {
           final game = state.gameModel;
           return Scaffold(
-            appBar: AppBar(title: Text("Lobby: ${widget.gameId}")),
+            appBar: AppBar(
+              title: Row(
+                children: [
+                  Text("Lobby: ${widget.gameId}"),
+                  IconButton(
+                    icon: const Icon(Icons.copy),
+                    tooltip: "Copy Game ID",
+                    onPressed: () {
+                      // --- COPY LOGIC ---
+                      Clipboard.setData(ClipboardData(text: widget.gameId));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Game ID copied to clipboard!")),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
             body: Column(
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text("Waiting for players...", style: TextStyle(fontSize: 18)),
-                ),
-                // List of Joined Players
+                // ... (Rest of your Lobby UI code remains the same) ...
                 Expanded(
                   child: ListView.builder(
                     itemCount: game.players.length,
@@ -70,35 +79,22 @@ class _LobbyScreenState extends State<LobbyScreen> {
                     },
                   ),
                 ),
-
-                // Start Button (Only for Host/Player 1)
+                // ... (Start Button Code) ...
                 if (game.players.isNotEmpty && game.players[0]['id'] == widget.userId)
                   Padding(
                     padding: const EdgeInsets.all(20.0),
                     child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        disabledBackgroundColor: Colors.grey,
-                      ),
-                      // Disable if alone
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                       onPressed: game.players.length < 2
                           ? null
-                          : () {
-                        context.read<GameBloc>().add(StartGame(widget.gameId));
-                      },
-                      child: Text(
-                        game.players.length < 2 ? "WAITING FOR PLAYERS..." : "START GAME",
-                        style: const TextStyle(color: Colors.white),
-                      ),
+                          : () => context.read<GameBloc>().add(StartGame(widget.gameId)),
+                      child: Text(game.players.length < 2 ? "WAITING..." : "START GAME"),
                     ),
                   )
                 else
                   const Padding(
                     padding: EdgeInsets.all(20.0),
-                    child: Text(
-                      "Waiting for host to start...",
-                      style: TextStyle(fontStyle: FontStyle.italic, fontSize: 16),
-                    ),
+                    child: Text("Waiting for host..."),
                   )
               ],
             ),
@@ -110,12 +106,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Color _getColor(String color) {
-    switch(color) {
-      case 'Red': return Colors.red;
-      case 'Green': return Colors.green;
-      case 'Yellow': return Colors.amber;
-      case 'Blue': return Colors.blue;
-      default: return Colors.grey;
-    }
+    if (color == 'Red') return Colors.red;
+    if (color == 'Green') return Colors.green;
+    if (color == 'Yellow') return Colors.amber;
+    if (color == 'Blue') return Colors.blue;
+    return Colors.grey;
   }
 }

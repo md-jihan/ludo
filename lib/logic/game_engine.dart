@@ -1,80 +1,66 @@
 class GameEngine {
   static const int pathLength = 52;
-  static const int finishedIndex = 99;
+  static const int finishedIndex = 99; // <--- The Safe Spot
 
-  // Start Positions for each color
-  static const Map<String, int> startIndices = {
-    'Red': 1,
-    'Green': 14,
-    'Yellow': 27,
-    'Blue': 40,
-  };
-
-  // Entry to Home Stretch
+  // Entry points to the Home Stretch
   static const Map<String, int> homeStretchEntry = {
     'Red': 51, 'Green': 12, 'Yellow': 25, 'Blue': 38,
   };
 
   int calculateNextPosition(int currentPos, int diceValue, String color) {
-    // 1. LOGIC: Moving from Home (0)
-    // You MUST roll a 6 to move out.
+    // 1. HOME RULE: Needs 6 to start
     if (currentPos == 0) {
-      if (diceValue == 6) {
-        return startIndices[color]!; // Moves to 1, 14, 27, or 40
-      }
-      return 0; // Otherwise, stay at home
+      return diceValue == 6 ? _getStart(color) : 0;
     }
 
-    // 2. Logic: Already Finished
+    // 2. FINISH RULE: If already finished, NEVER move again.
     if (currentPos == finishedIndex) return finishedIndex;
 
-    // 3. Logic: Inside Home Stretch
+    // 3. HOME STRETCH RULE (Prevent going out)
     if (currentPos > 100) {
       int homeBase = _getHomeStretchBase(color);
-      int stepInStretch = currentPos - homeBase;
-      int distanceToFinish = 6 - stepInStretch;
+      int stepInStretch = currentPos - homeBase; // e.g. 1 (first box)
+      int distanceToFinish = 6 - stepInStretch; // Steps needed to reach center
 
-      if (diceValue == distanceToFinish) return finishedIndex;
-      if (diceValue < distanceToFinish) return currentPos + diceValue;
-      return currentPos; // Overshot, stay put
+      if (diceValue <= distanceToFinish) {
+        if (diceValue == distanceToFinish) return finishedIndex; // Exact roll -> Win
+        return currentPos + diceValue; // Move forward
+      }
+
+      // IF DICE IS TOO HIGH (e.g. need 2, rolled 5) -> DO NOTHING.
+      // This prevents the pawn from "going out" or bouncing weirdly.
+      return currentPos;
     }
 
-    // 4. Logic: Standard Path
+    // 4. Standard Movement (Same as before)
     int targetPos = currentPos + diceValue;
     int entryPoint = homeStretchEntry[color]!;
-
-    // Check for wrapping / home stretch entry
     bool passedEntryPoint = false;
+
     if (currentPos <= entryPoint && targetPos > entryPoint) passedEntryPoint = true;
 
-    // Handle wrap-around case (e.g. 50 -> 55 for Red, but Red entry is 51)
-    // Handle wrap-around case (e.g. 50 -> 3 for Green)
+    // Handle wrap around (52 -> 1)
     if (targetPos > pathLength && !passedEntryPoint) {
       targetPos -= pathLength;
-      // Re-check entry point after wrap
       if (targetPos > entryPoint) passedEntryPoint = true;
     }
 
     if (passedEntryPoint) {
-      int extraSteps = targetPos - entryPoint; // simplified
-      // Calculate true extra steps based on math is complex,
-      // simplified approach: if we passed entry, we go into stretch
-      return _getHomeStretchBase(color) + (diceValue - (entryPoint - currentPos));
-      // Note: This math simplifies the specific "Enter Stretch" logic.
-      // For exact Ludo wrapping, ensure (currentPos + dice) aligns with entry.
+      // Calculate steps taken INTO the colored path
+      int extraSteps = diceValue - (entryPoint - currentPos);
+      return _getHomeStretchBase(color) + extraSteps;
     }
 
     if (targetPos > pathLength) return targetPos - pathLength;
     return targetPos;
   }
 
-  // Check collision/kill
-  Map<String, List<int>> checkKill(
-      Map<String, List<int>> allTokens, String moverColor, int landedIndex) {
+  // ... (Keep checkKill and helper methods same as before) ...
 
-    // Safe zones: 1, 14, 27, 40 (Starts) and 9, 22, 35, 48 (Stars)
+  Map<String, List<int>> checkKill(Map<String, List<int>> allTokens, String moverColor, int landedIndex) {
+    // Cannot kill if finished (99) or at home (0) or in safe zones
     List<int> safeZones = [1, 9, 14, 22, 27, 35, 40, 48];
-    if (safeZones.contains(landedIndex) || landedIndex == 0 || landedIndex > 100) {
+    if (safeZones.contains(landedIndex) || landedIndex == 0 || landedIndex > 100 || landedIndex == 99) {
       return allTokens;
     }
 
@@ -82,12 +68,22 @@ class GameEngine {
       if (color != moverColor) {
         for (int i = 0; i < positions.length; i++) {
           if (positions[i] == landedIndex) {
-            allTokens[color]![i] = 0; // Send back to home
+            allTokens[color]![i] = 0; // Kill!
           }
         }
       }
     });
     return allTokens;
+  }
+
+  int _getStart(String color) {
+    switch(color) {
+      case 'Red': return 1;
+      case 'Green': return 14;
+      case 'Yellow': return 27;
+      case 'Blue': return 40;
+      default: return 1;
+    }
   }
 
   int _getHomeStretchBase(String color) {

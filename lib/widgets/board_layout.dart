@@ -70,13 +70,11 @@ class BoardLayout extends StatelessWidget {
 
           // Inside _buildTokens method, replace the existing Positioned widget with this:
 
-          widgets.add(
-            AnimatedPositioned(
-              // 1. ANIMATION SETTINGS
-              duration: const Duration(milliseconds: 600), // Takes 0.6 seconds to fly home
-              curve: Curves.easeInOutBack, // A nice smooth curve with a slight bounce
+          // Inside _buildTokens method...
 
-              // 2. COORDINATES
+          widgets.add(
+            // CHANGED: Use Positioned (No Animation) instead of AnimatedPositioned
+            Positioned(
               left: left,
               top: top,
 
