@@ -4,7 +4,8 @@ import '../blocs/computer/computer_game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
 import '../widgets/computer_board_layout.dart';
-import '../models/game_model.dart'; // Import for GameModel
+import '../models/game_model.dart';
+import '../widgets/three_d_dice.dart'; // Import for GameModel
 
 class ComputerGameBoard extends StatelessWidget {
   final String userColor;
@@ -188,7 +189,7 @@ class _ComputerViewState extends State<ComputerView> {
                     child: Container(
                       decoration: BoxDecoration(
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 15, spreadRadius: 2)
+                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, spreadRadius: 2)
                         ],
                       ),
                       child: ComputerBoardLayout(
@@ -240,6 +241,14 @@ class _ComputerViewState extends State<ComputerView> {
                             context.read<ComputerGameBloc>().add(const RollDice("OFFLINE"));
                           },
                         ),
+                        // child: ThreeDimensionalDice(
+                        //   value: game.diceValue, // Pass the game value
+                        //   size: 60,
+                        //   disabled: !(isHumanTurn && game.diceValue == 0), // Disable if not your turn
+                        //   onRoll: () {
+                        //     context.read<ComputerGameBloc>().add(const RollDice("OFFLINE"));
+                        //   },
+                        // ),
                       ),
 
                       // Computer Info
