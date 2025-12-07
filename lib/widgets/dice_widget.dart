@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../blocs/game/game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
+import '../services/audio_service.dart';
 
 class DiceWidget extends StatefulWidget {
   final String myPlayerId;
@@ -41,8 +42,13 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
   }
 
   // --- 1. START ANIMATION ---
+// Inside lib/widgets/dice_widget.dart
+
   void _startRollingAnim() {
     if (_isRolling) return;
+
+    // --- PLAY ROLL SOUND ---
+    AudioService.playRoll();
 
     setState(() {
       _isRolling = true;
@@ -51,7 +57,7 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
     // A. Start Physical Spin
     _controller.repeat();
 
-    // B. Start Number Flipping (Visual Chaos)
+    // B. Start Number Flipping
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
       if (mounted) {
