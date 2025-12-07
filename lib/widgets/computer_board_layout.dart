@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ludo/widgets/ludo_board_painter.dart';
-import 'package:ludo/widgets/animated_token.dart'; // <--- Using the Animated 3D Token
+import 'package:ludo/widgets/animated_token.dart';
 import '../models/game_model.dart';
 import '../logic/game_engine.dart';
-import '../blocs/computer/computer_game_bloc.dart'; // <--- Computer Logic
+import '../blocs/computer/computer_game_bloc.dart';
 import '../blocs/game/game_event.dart';
 
 class ComputerBoardLayout extends StatelessWidget {
@@ -31,14 +31,11 @@ class ComputerBoardLayout extends StatelessWidget {
           height: boardSize,
           child: Stack(
             children: [
-              // 1. Draw the Board Background
               Positioned.fill(
                 child: CustomPaint(
                   painter: LudoBoardPainter(players: gameModel.players),
                 ),
               ),
-
-              // 2. Build the Animated 3D Tokens
               ..._buildTokens(context, gameModel.tokens, cellSize, tokenSize),
             ],
           ),
@@ -56,20 +53,15 @@ class ComputerBoardLayout extends StatelessWidget {
 
         widgets.add(
           AnimatedToken(
-            // Key is crucial: Flutter needs this to know WHICH pawn to animate
+            // Key is crucial to prevent "Ghost" animations on rebuild
             key: ValueKey("$color-$i"),
 
             colorName: color,
             tokenIndex: i,
             currentPosition: currentPos,
-
-            // Logic to dim the pawn if it's not ready to move
             isDimmed: gameModel.diceValue == 0 || currentPos == 99,
-
             cellSize: cellSize,
             tokenSize: tokenSize,
-
-            // Handle Tap Logic
             onTap: () => _handleTap(context, color, i, currentPos),
           ),
         );
@@ -79,24 +71,29 @@ class ComputerBoardLayout extends StatelessWidget {
   }
 
   void _handleTap(BuildContext context, String clickedPawnColor, int index, int currentPos) {
-    // 1. Identify "My" Color (Human)
+    // 1. Check if it's My Color
     final myPlayer = gameModel.players.firstWhere(
             (p) => p['id'] == currentUserId,
         orElse: () => {'color': 'Spectator'}
     );
     String myColor = myPlayer['color'];
+    if (clickedPawnColor != myColor) return;
 
-    // 2. Basic Validation
-    if (clickedPawnColor != myColor) return; // Can't move enemy
-    if (gameModel.diceValue == 0) return; // Roll dice first
+    // 2. Check if Dice is Rolled
+    if (gameModel.diceValue == 0) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Roll the dice first!"), duration: Duration(milliseconds: 500)));
+      return;
+    }
 
-    // 3. Check Turn
+    // 3. Check if it is CURRENTLY My Turn
     final currentPlayer = gameModel.players[gameModel.currentTurn];
-    if (currentPlayer['id'] != currentUserId) return; // Not human turn
+    if (currentPlayer['id'] != currentUserId) return;
 
-    // 4. Validate Move Rules (Engine)
+    // 4. Validate Move (Engine)
     int nextPos = _engine.calculateNextPosition(currentPos, gameModel.diceValue, clickedPawnColor);
     if (nextPos == currentPos) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text("Invalid move!"),
@@ -106,7 +103,7 @@ class ComputerBoardLayout extends StatelessWidget {
       return;
     }
 
-    // 5. Send Move to Computer Bloc
+    // 5. Send Move
     context.read<ComputerGameBloc>().add(
       MoveToken(
         gameId: gameModel.gameId,

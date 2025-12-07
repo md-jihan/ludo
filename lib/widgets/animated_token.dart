@@ -2,12 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../logic/path_constants.dart';
 import '../services/audio_service.dart';
-import 'token_pawn.dart'; // <--- IMPORT YOUR 3D PAWN
+import 'token_pawn.dart';
 
 class AnimatedToken extends StatefulWidget {
   final String colorName;
   final int tokenIndex;
-  final int currentPosition; // Server position
+  final int currentPosition;
   final bool isDimmed;
   final double cellSize;
   final double tokenSize;
@@ -39,6 +39,7 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
+    // Initialize exactly at current position to avoid "flying" on load
     _visualPosition = widget.currentPosition;
     _updateCoordinates(_visualPosition);
 
@@ -47,7 +48,6 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
       vsync: this,
     );
 
-    // Hop effect: Scale up 1.3x then back to 1.0x
     _scaleAnim = TweenSequence([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 1.3, end: 1.0), weight: 50),
@@ -58,11 +58,11 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
   void didUpdateWidget(AnimatedToken oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // If position changed, animate steps
+    // Only animate if position CHANGED
     if (widget.currentPosition != oldWidget.currentPosition) {
       _animateToNewPosition(oldWidget.currentPosition, widget.currentPosition);
     }
-    // If board resized, update immediately
+    // Handle Board Resize
     else if (widget.cellSize != oldWidget.cellSize) {
       _updateCoordinates(_visualPosition);
     }
@@ -74,22 +74,42 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
     super.dispose();
   }
 
-  void _animateToNewPosition(int start, int end) async {
-    // 1. Reset/Kill Logic (Direct Teleport)
-    if (end == 0 && start != 0) {
+  Future<void> _animateToNewPosition(int start, int end) async {
+    // --- FIX IS HERE ---
+
+    // Case 1: Spawning (0 -> Start) OR Killing (Pos -> 0)
+    // We do NOT want to walk the steps between 0 and 14.
+    // We want to jump directly.
+    if (start == 0 || end == 0) {
       if (mounted) {
         setState(() {
-          _visualPosition = 0;
-          _updateCoordinates(0);
+          _visualPosition = end;
+          _updateCoordinates(end);
         });
+
+        // Optional: Play a sound for spawning/killing
+        if (end != 0) AudioService.playMove();
+        else AudioService.playKill();
+
+        // Little visual pop
+        _bounceController.forward(from: 0);
       }
       return;
     }
 
-    // 2. Step-by-Step Walk
+    // Case 2: Normal Walking (e.g., 14 -> 16)
     int steps = end - start;
-    if (steps < 0) return;
 
+    // Sanity check: If steps are too large (glitch), don't walk
+    if (steps < 0 || steps > 6) {
+      setState(() {
+        _visualPosition = end;
+        _updateCoordinates(end);
+      });
+      return;
+    }
+
+    // Walk step-by-step
     for (int i = 1; i <= steps; i++) {
       if (!mounted) return;
 
@@ -100,8 +120,8 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
         _updateCoordinates(nextStep);
       });
 
-      _bounceController.forward(from: 0); // Trigger Hop
-      AudioService.playMove(); // Tick Sound
+      _bounceController.forward(from: 0); // Visual Pop
+      AudioService.playMove(); // Sound
 
       await Future.delayed(const Duration(milliseconds: 250)); // Walk Speed
     }
@@ -112,7 +132,8 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
     double l = 0;
     double t = 0;
 
-    if (pos == 99) { // Winner Center
+    if (pos == 99) {
+      // Winner Center
       double centerGrid = 7.0 * widget.cellSize;
       switch (widget.colorName) {
         case 'Red': l = centerGrid - (widget.cellSize * 0.6); t = centerGrid; break;
@@ -125,14 +146,16 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
       if (widget.colorName == 'Green' || widget.colorName == 'Blue') l += jitter - (widget.tokenSize * 0.3);
       l += centeringOffset; t += centeringOffset;
     }
-    else if (pos == 0) { // Home Base
+    else if (pos == 0) {
+      // Home Base
       var point = PathConstants.homeBases[widget.colorName]?[widget.tokenIndex];
       if (point != null) {
         l = (point.col * widget.cellSize) + centeringOffset;
         t = (point.row * widget.cellSize) + centeringOffset;
       }
     }
-    else { // Path
+    else {
+      // Path (Grid 1-52)
       var point = PathConstants.stepToGrid[pos];
       if (point != null) {
         l = (point.col * widget.cellSize) + centeringOffset;
@@ -146,8 +169,7 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 100),
+    return Positioned(
       left: _left,
       top: _top,
       child: GestureDetector(
@@ -157,12 +179,11 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
           child: SizedBox(
             width: widget.tokenSize,
             height: widget.tokenSize,
-            // --- RESTORED 3D PAWN WIDGET HERE ---
             child: TokenPawn(
               colorName: widget.colorName,
               tokenIndex: widget.tokenIndex,
               isDimmed: widget.isDimmed,
-              showNumber: true, // Always show numbers on the board
+              showNumber: true,
             ),
           ),
         ),
