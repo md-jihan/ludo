@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ludo/screens/landing_screen.dart';
 import 'firebase_options.dart';
 import 'services/firebase_service.dart';
 import 'services/audio_service.dart'; // <--- Import AudioService
@@ -36,7 +37,7 @@ class MyApp extends StatelessWidget {
         ],
         child: MaterialApp(
           title: 'Flutter Ludo',
-          home: const HomeMenu(),
+          home: const LandingScreen(),
           debugShowCheckedModeBanner: false
         ),
       ),
