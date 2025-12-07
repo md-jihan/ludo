@@ -177,10 +177,25 @@ class _GameBoardState extends State<GameBoard> {
                               ],
                             ),
                           ),
+                          // Inside lib/screens/game_board.dart
+
+// ... (Inside the Row of controls) ...
                           Container(
                               padding: const EdgeInsets.all(5),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                              child: DiceWidget(myPlayerId: widget.userId)
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20)
+                              ),
+
+                              // USE THE UNIVERSAL DICE WIDGET HERE
+                              child: DiceWidget(
+                                value: game.diceValue, // 1. Pass Value
+                                isMyTurn: game.players[game.currentTurn]['id'] == widget.userId, // 2. Check Turn
+                                onRoll: () {
+                                  // 3. Trigger Online Event
+                                  context.read<GameBloc>().add(RollDice(game.gameId));
+                                },
+                              )
                           ),
                         ],
                       ),

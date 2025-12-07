@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ludo/widgets/dice_widget.dart';
 import '../blocs/computer/computer_game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
@@ -234,23 +235,17 @@ class _ComputerViewState extends State<ComputerView> {
                           color: Colors.white.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: LocalDiceWidget(
-                          value: game.diceValue,
-                          isMyTurn: isHumanTurn && game.status != 'finished',
+
+                        // USE THE UNIVERSAL DICE WIDGET HERE
+                        child: DiceWidget(
+                          value: game.diceValue, // 1. Pass the value from Computer Bloc
+                          isMyTurn: isHumanTurn && game.status != 'finished', // 2. Check turn
                           onRoll: () {
+                            // 3. Trigger Computer Event
                             context.read<ComputerGameBloc>().add(const RollDice("OFFLINE"));
                           },
                         ),
-                        // child: ThreeDimensionalDice(
-                        //   value: game.diceValue, // Pass the game value
-                        //   size: 60,
-                        //   disabled: !(isHumanTurn && game.diceValue == 0), // Disable if not your turn
-                        //   onRoll: () {
-                        //     context.read<ComputerGameBloc>().add(const RollDice("OFFLINE"));
-                        //   },
-                        // ),
                       ),
-
                       // Computer Info
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
