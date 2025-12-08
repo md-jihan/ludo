@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/audio_service.dart';
 import 'home_menu.dart';
 import 'computer_game_board.dart';
 // --- IMPORT YOUR TOKEN PAWN WIDGET ---
@@ -39,8 +40,8 @@ class _LandingScreenState extends State<LandingScreen> {
                       onTap: () => _showSettingsDialog(context),
                     ),
                     _buildSmallWoodenBtn(
-                      icon: _isSoundOn ? Icons.volume_up : Icons.volume_off,
-                      onTap: () => setState(() => _isSoundOn = !_isSoundOn),
+                      icon: AudioService.isSoundOn ? Icons.volume_up : Icons.volume_off,
+                      onTap: () => setState(() => AudioService.toggleSound()),
                     ),
                   ],
                 ),
