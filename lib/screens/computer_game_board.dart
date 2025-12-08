@@ -5,8 +5,6 @@ import '../blocs/computer/computer_game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
 import '../widgets/computer_board_layout.dart';
-import '../models/game_model.dart';
-import '../widgets/three_d_dice.dart'; // Import for GameModel
 
 class ComputerGameBoard extends StatelessWidget {
   final String userColor;

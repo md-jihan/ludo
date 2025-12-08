@@ -4,12 +4,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ludo/screens/landing_screen.dart';
 import 'firebase_options.dart';
 import 'services/firebase_service.dart';
-// Note: We don't need to inject AudioService anymore because it is static.
 import 'blocs/game/game_bloc.dart';
+// You don't need to import audio_service here anymore
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // REMOVED: await AudioService.initialize(); <-- NOT NEEDED for audioplayers
+
   runApp(const MyApp());
 }
 
@@ -21,18 +24,16 @@ class MyApp extends StatelessWidget {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider(create: (context) => FirebaseService()),
-        // Removed AudioService provider (It is static now)
       ],
       child: MultiBlocProvider(
         providers: [
           BlocProvider<GameBloc>(
             create: (context) => GameBloc(
-              // Updated to match the new GameBloc constructor
               firebaseService: context.read<FirebaseService>(),
             ),
           ),
         ],
-        child: const MaterialApp( // Added const for performance
+        child: const MaterialApp(
           title: 'Flutter Ludo',
           home: LandingScreen(),
           debugShowCheckedModeBanner: false,
