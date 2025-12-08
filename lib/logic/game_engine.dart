@@ -1,98 +1,161 @@
-class GameEngine {
-  static const int pathLength = 52;
-  static const int finishedIndex = 99; // <--- The Safe Spot
+import 'dart:math';
+import '../models/game_model.dart';
 
-  // Entry points to the Home Stretch
-  static const Map<String, int> homeStretchEntry = {
-    'Red': 51, 'Green': 12, 'Yellow': 25, 'Blue': 38,
-  };
+class GameEngine {
+  final Random _random = Random();
+
+  // Safe Spots (Stars)
+  final List<int> _safeSpots = [1, 9, 14, 22, 27, 35, 40, 48];
 
   int calculateNextPosition(int currentPos, int diceValue, String color) {
-    // 1. HOME RULE: Needs 6 to start
+    // --- 1. SPAWN LOGIC ---
     if (currentPos == 0) {
-      return diceValue == 6 ? _getStart(color) : 0;
+      if (diceValue != 6) return 0;
+      switch (color) {
+        case 'Red': return 1;
+        case 'Green': return 14;
+        case 'Yellow': return 27;
+        case 'Blue': return 40;
+        default: return 1;
+      }
     }
 
-    // 2. FINISH RULE: If already finished, NEVER move again.
-    if (currentPos == finishedIndex) return finishedIndex;
+    // --- 2. DEFINE ZONES ---
+    int entrance = 0;
+    int homeStart = 0;
+    int homeEnd = 0;
 
-    // 3. HOME STRETCH RULE (Prevent going out)
-    if (currentPos > 100) {
-      int homeBase = _getHomeStretchBase(color);
-      int stepInStretch = currentPos - homeBase; // e.g. 1 (first box)
-      int distanceToFinish = 6 - stepInStretch; // Steps needed to reach center
+    switch (color) {
+      case 'Red':    entrance = 51; homeStart = 53; homeEnd = 57; break;
+      case 'Green':  entrance = 12; homeStart = 58; homeEnd = 62; break;
+      case 'Yellow': entrance = 25; homeStart = 63; homeEnd = 67; break;
+      case 'Blue':   entrance = 38; homeStart = 68; homeEnd = 72; break;
+    }
 
-      if (diceValue <= distanceToFinish) {
-        if (diceValue == distanceToFinish) return finishedIndex; // Exact roll -> Win
-        return currentPos + diceValue; // Move forward
+    // --- 3. ALREADY IN HOME STRETCH? ---
+    // If we are already on the colored path, just move forward
+    if (currentPos >= homeStart && currentPos <= homeEnd) {
+      int nextPos = currentPos + diceValue;
+
+      if (nextPos > homeEnd) {
+        // Check if we hit exactly 99 (Victory)
+        // Example: At 57 (last step), need 1 to win.
+        // Logic: 57 + 1 = 58 (which is > 57).
+        // Distance to win = (homeEnd - currentPos) + 1
+
+        int stepsToWin = (homeEnd - currentPos) + 1;
+        if (diceValue == stepsToWin) return 99; // WIN!
+
+        return currentPos; // Overshoot (Stay put)
+      }
+      return nextPos;
+    }
+
+    // --- 4. CHECK IF ENTERING HOME ---
+    // Calculate distance to the entrance based on color
+    int distToEntrance = -1;
+
+    if (currentPos <= entrance) {
+      // Simple case: Forward to entrance (e.g. Current 48, Entrance 51)
+      distToEntrance = entrance - currentPos;
+    } else {
+      // Wrap case: (e.g. Green Current 50, Entrance 12)
+      // 50 -> 52 (2 steps) + 1 -> 12 (12 steps) = 14 steps
+      distToEntrance = (52 - currentPos) + entrance;
+    }
+
+    // If dice is larger than distance, we enter home!
+    if (distToEntrance >= 0 && diceValue > distToEntrance) {
+      int stepsInHome = diceValue - distToEntrance - 1;
+      int newPos = homeStart + stepsInHome;
+
+      // Cap movement if it overshoots the home path immediately
+      if (newPos > homeEnd) {
+        int stepsToWin = (homeEnd - homeStart) + 1; // 6 steps usually
+        if (stepsInHome == stepsToWin) return 99;
+        return currentPos; // Overshoot
       }
 
-      // IF DICE IS TOO HIGH (e.g. need 2, rolled 5) -> DO NOTHING.
-      // This prevents the pawn from "going out" or bouncing weirdly.
-      return currentPos;
+      return newPos;
     }
 
-    // 4. Standard Movement (Same as before)
-    int targetPos = currentPos + diceValue;
-    int entryPoint = homeStretchEntry[color]!;
-    bool passedEntryPoint = false;
-
-    if (currentPos <= entryPoint && targetPos > entryPoint) passedEntryPoint = true;
-
-    // Handle wrap around (52 -> 1)
-    if (targetPos > pathLength && !passedEntryPoint) {
-      targetPos -= pathLength;
-      if (targetPos > entryPoint) passedEntryPoint = true;
-    }
-
-    if (passedEntryPoint) {
-      // Calculate steps taken INTO the colored path
-      int extraSteps = diceValue - (entryPoint - currentPos);
-      return _getHomeStretchBase(color) + extraSteps;
-    }
-
-    if (targetPos > pathLength) return targetPos - pathLength;
-    return targetPos;
+    // --- 5. NORMAL BOARD MOVEMENT ---
+    int nextPos = currentPos + diceValue;
+    if (nextPos > 52) nextPos -= 52;
+    return nextPos;
   }
 
-  // ... (Keep checkKill and helper methods same as before) ...
-
-  Map<String, List<int>> checkKill(Map<String, List<int>> allTokens, String moverColor, int landedIndex) {
-    // Cannot kill if finished (99) or at home (0) or in safe zones
-    List<int> safeZones = [1, 9, 14, 22, 27, 35, 40, 48];
-    if (safeZones.contains(landedIndex) || landedIndex == 0 || landedIndex > 100 || landedIndex == 99) {
-      return allTokens;
+  // Check Kill (Updated to protect Home Paths)
+  Map<String, List<int>> checkKill(Map<String, List<int>> tokens, String myColor, int newPos) {
+    // Cannot kill in Base(0), Winner(99), Safe Spots, OR Home Paths (>52)
+    if (newPos == 0 || newPos == 99 || _safeSpots.contains(newPos) || newPos > 52) {
+      return tokens;
     }
 
-    allTokens.forEach((color, positions) {
-      if (color != moverColor) {
+    Map<String, List<int>> newTokens = Map.from(tokens);
+    newTokens = newTokens.map((k, v) => MapEntry(k, List.from(v)));
+
+    newTokens.forEach((color, positions) {
+      if (color != myColor) {
         for (int i = 0; i < positions.length; i++) {
-          if (positions[i] == landedIndex) {
-            allTokens[color]![i] = 0; // Kill!
+          if (positions[i] == newPos) {
+            positions[i] = 0;
           }
         }
       }
     });
-    return allTokens;
+
+    return newTokens;
   }
 
-  int _getStart(String color) {
-    switch(color) {
-      case 'Red': return 1;
-      case 'Green': return 14;
-      case 'Yellow': return 27;
-      case 'Blue': return 40;
-      default: return 1;
+  // AI Logic (Updated)
+  int pickBestTokenIndex(GameModel game, int diceValue) {
+    String myColor = game.players[game.currentTurn]['color'];
+    List<int> myTokens = game.tokens[myColor]!;
+
+    int bestTokenIndex = -1;
+    int bestScore = -100;
+
+    for (int i = 0; i < myTokens.length; i++) {
+      int currentPos = myTokens[i];
+      int nextPos = calculateNextPosition(currentPos, diceValue, myColor);
+
+      if (nextPos == currentPos) continue;
+
+      int score = 0;
+
+      // A. KILL
+      Map<String, List<int>> afterMove = checkKill(game.tokens, myColor, nextPos);
+      if (_countTotalTokens(afterMove) < _countTotalTokens(game.tokens)) score += 100;
+
+      // B. WIN (Reach 99)
+      if (nextPos == 99) score += 50;
+
+      // C. ENTER HOME (Reach >52)
+      if (currentPos <= 52 && nextPos > 52) score += 30;
+
+      // D. SAFE SPOT
+      if (_safeSpots.contains(nextPos)) score += 20;
+
+      // E. SPAWN
+      if (currentPos == 0 && nextPos != 0) score += 10;
+
+      // F. ADVANCE
+      score += 1;
+      score += _random.nextInt(5);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestTokenIndex = i;
+      }
     }
+
+    return bestTokenIndex;
   }
 
-  int _getHomeStretchBase(String color) {
-    switch(color) {
-      case 'Red': return 100;
-      case 'Green': return 200;
-      case 'Yellow': return 300;
-      case 'Blue': return 400;
-      default: return 500;
-    }
+  int _countTotalTokens(Map<String, List<int>> tokens) {
+    int count = 0;
+    tokens.values.forEach((list) => count += list.where((p) => p > 0 && p < 99).length);
+    return count;
   }
 }

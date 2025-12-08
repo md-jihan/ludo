@@ -7,17 +7,18 @@ import '../blocs/game/game_state.dart';
 import '../widgets/computer_board_layout.dart';
 
 class ComputerGameBoard extends StatelessWidget {
-  final String userColor;
+  final String userColor; // e.g. "Blue"
 
   const ComputerGameBoard({super.key, required this.userColor});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
+      // Initialize Bloc and Start Game immediately
       create: (context) => ComputerGameBloc()..add(StartComputerGame(userColor)),
       child: Scaffold(
-        // 1. GLOBAL WOOD BACKGROUND
         body: Container(
+          // 1. GLOBAL WOOD BACKGROUND
           decoration: const BoxDecoration(
             image: DecorationImage(
               image: AssetImage('assets/wood.png'),
@@ -43,10 +44,10 @@ class _ComputerViewState extends State<ComputerView> {
   // --- WIN/LOSS DIALOG ---
   void _showGameEndDialog(BuildContext context, bool userWon) {
     showDialog(
-      barrierDismissible: false, // Must click button
+      barrierDismissible: false,
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFD7CCC8), // Wood Color
+        backgroundColor: const Color(0xFFD7CCC8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: Color(0xFF5D4037), width: 4),
@@ -83,12 +84,12 @@ class _ComputerViewState extends State<ComputerView> {
           Center(
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3E2723), // Dark Wood
+                backgroundColor: const Color(0xFF3E2723),
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
               ),
               onPressed: () {
-                Navigator.pop(ctx); // Close Dialog
-                Navigator.pop(context); // Go back to Landing Screen
+                Navigator.pop(ctx);
+                Navigator.pop(context);
               },
               child: const Text("EXIT GAME", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
@@ -101,18 +102,15 @@ class _ComputerViewState extends State<ComputerView> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<ComputerGameBloc, GameState>(
-      // 1. LISTEN FOR GAME OVER
       listener: (context, state) {
         if (state is GameLoaded) {
           if (state.gameModel.status == 'finished') {
-            // Determine who won
             final game = state.gameModel;
-            final humanPlayer = game.players.firstWhere((p) => p['type'] == 'human');
+            final humanPlayer = game.players.firstWhere((p) => p['id'] == 'User', orElse: () => {});
+            if (humanPlayer.isEmpty) return;
+
             final String humanColor = humanPlayer['color'];
-
-            // Check if Human's tokens are all 99
-            final bool userWon = game.tokens[humanColor]!.every((t) => t == 99);
-
+            final bool userWon = game.winners.contains(humanColor);
             _showGameEndDialog(context, userWon);
           }
         }
@@ -120,18 +118,25 @@ class _ComputerViewState extends State<ComputerView> {
       builder: (context, state) {
         if (state is GameLoaded) {
           final game = state.gameModel;
+
+          // Safety Check: Ensure players exist
+          if (game.players.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
           final currentPlayer = game.players[game.currentTurn];
           final String turnName = currentPlayer['name'];
           final String turnColor = currentPlayer['color'];
-          final bool isHumanTurn = currentPlayer['type'] == 'human';
+          // Check if "isAuto" is false (meaning Human)
+          final bool isHumanTurn = currentPlayer['isAuto'] == false;
 
           return SafeArea(
             child: Column(
               children: [
-                // A. APP BAR
+                // --- A. TOP APP BAR ---
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                  padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
                   decoration: _woodenBoxDecoration(),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -154,7 +159,7 @@ class _ComputerViewState extends State<ComputerView> {
                   ),
                 ),
 
-                // B. STATUS PLANK
+                // --- B. STATUS PLANK (Turn Message) ---
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 40),
                   padding: const EdgeInsets.all(10),
@@ -179,29 +184,30 @@ class _ComputerViewState extends State<ComputerView> {
                   ),
                 ),
 
-                const Spacer(),
-
-                // C. THE BOARD
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, spreadRadius: 2)
-                        ],
-                      ),
-                      child: ComputerBoardLayout(
-                        gameModel: game,
-                        currentUserId: "HUMAN_PLAYER",
+                // --- C. THE BOARD (Use Expanded to fix layout issues) ---
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: AspectRatio(
+                        aspectRatio: 1.0, // Force square shape
+                        child: Container(
+                          decoration: BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, spreadRadius: 2)
+                            ],
+                          ),
+                          child: ComputerBoardLayout(
+                            gameModel: game,
+                            currentUserId: "User", // Matches Bloc ID
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
 
-                const Spacer(),
-
-                // D. CONTROLS
+                // --- D. BOTTOM CONTROLS ---
                 Container(
                   height: 140,
                   padding: const EdgeInsets.all(20),
@@ -233,17 +239,16 @@ class _ComputerViewState extends State<ComputerView> {
                           color: Colors.white.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
-
-                        // USE THE UNIVERSAL DICE WIDGET HERE
+                        // UNIVERSAL DICE WIDGET
                         child: DiceWidget(
-                          value: game.diceValue, // 1. Pass the value from Computer Bloc
-                          isMyTurn: isHumanTurn && game.status != 'finished', // 2. Check turn
+                          value: game.diceValue,
+                          isMyTurn: isHumanTurn && game.status != 'finished',
                           onRoll: () {
-                            // 3. Trigger Computer Event
                             context.read<ComputerGameBloc>().add(const RollDice("OFFLINE"));
                           },
                         ),
                       ),
+
                       // Computer Info
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
@@ -294,90 +299,4 @@ class _ComputerViewState extends State<ComputerView> {
       default: return Colors.black;
     }
   }
-}
-
-// --- LOCAL DICE WIDGET ---
-
-// --- 2D LOCAL DICE WIDGET ---
-class LocalDiceWidget extends StatelessWidget {
-  final int value;
-  final bool isMyTurn;
-  final VoidCallback onRoll;
-
-  const LocalDiceWidget({
-    super.key,
-    required this.value,
-    required this.isMyTurn,
-    required this.onRoll
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Logic: Enable roll only if it's my turn AND dice is reset (0)
-    bool canRoll = isMyTurn && value == 0;
-
-    // Visuals: White if active, Grey if disabled
-    Color boxColor = canRoll ? Colors.white : Colors.grey[400]!;
-    Color borderColor = canRoll ? Colors.black : Colors.grey[700]!;
-
-    return GestureDetector(
-      onTap: canRoll ? onRoll : null,
-      child: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          color: boxColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor, width: 2),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 5,
-                offset: const Offset(2,2)
-            )
-          ],
-        ),
-        child: Center(
-          child: value == 0
-              ? (canRoll
-              ? const Text(
-              "ROLL",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
-          )
-              : const Icon(Icons.hourglass_bottom, color: Colors.black54))
-              : CustomPaint(
-            size: const Size(50, 50),
-            painter: _DotPainter(value),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// --- PAINTER FOR 2D DOTS ---
-class _DotPainter extends CustomPainter {
-  final int n;
-  _DotPainter(this.n);
-
-  @override
-  void paint(Canvas c, Size s) {
-    final p = Paint()..color = Colors.black;
-    double r = s.width / 9;   // Dot radius
-    double m = s.width / 2;   // Middle
-    double l = s.width / 4;   // Left/Top
-    double R = s.width * 0.75; // Right/Bottom
-
-    List<Offset> d = [];
-
-    if (n % 2 != 0) d.add(Offset(m, m)); // Center dot for 1, 3, 5
-    if (n > 1) d.addAll([Offset(l, l), Offset(R, R)]); // Diagonal
-    if (n > 3) d.addAll([Offset(l, R), Offset(R, l)]); // Other diagonal
-    if (n == 6) d.addAll([Offset(l, m), Offset(R, m)]); // Middle sides
-
-    for (var o in d) c.drawCircle(o, r, p);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
 }

@@ -75,20 +75,20 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
   }
 
   Future<void> _animateToNewPosition(int start, int end) async {
-    // 1. SPAWN / KILL LOGIC (Instant Jump)
-    // If coming from Home (0) or going to Home (0), do not walk.
-    if (start == 0 || end == 0) {
+    // 1. TELEPORT CASES (Spawn, Kill, Win)
+    // If we are Spawning (start=0), Killing (end=0), or Winning (end=99)
+    // We do NOT want to walk the intermediate numbers.
+    if (start == 0 || end == 0 || end == 99) { // <--- ADDED 'end == 99'
       if (mounted) {
         setState(() {
           _visualPosition = end;
           _updateCoordinates(end);
         });
 
-        // Play appropriate sound
-        if (end != 0) AudioService.playMove();
-        else AudioService.playKill();
+        if (end == 0) AudioService.playKill();
+        else if (end == 99) AudioService.playWin(); // Play Win Sound
+        else AudioService.playMove();
 
-        // Visual Pop
         _bounceController.forward(from: 0);
       }
       return;
@@ -112,7 +112,6 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
     for (int i = 1; i <= steps; i++) {
       if (!mounted) return;
 
-      // --- DEFINING THE VARIABLE HERE ---
       int nextStep = start + i;
 
       setState(() {
@@ -120,14 +119,12 @@ class _AnimatedTokenState extends State<AnimatedToken> with SingleTickerProvider
         _updateCoordinates(nextStep);
       });
 
-      _bounceController.forward(from: 0); // Visual Pop
-      AudioService.playMove(); // Sound
-
-      // 4. SYNC ADJUSTMENT
-      // 200ms usually matches the "Tick" sound better than 250ms
+      _bounceController.forward(from: 0);
+      AudioService.playMove();
       await Future.delayed(const Duration(milliseconds: 200));
     }
   }
+
   void _updateCoordinates(int pos) {
     double centeringOffset = (widget.cellSize - widget.tokenSize) / 2;
     double l = 0;

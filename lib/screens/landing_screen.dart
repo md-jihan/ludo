@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../blocs/computer/computer_game_bloc.dart';
+import '../blocs/game/game_bloc.dart'; // Needed for StartComputerGame event
+import '../blocs/game/game_event.dart';
 import '../services/audio_service.dart';
 import 'home_menu.dart';
 import 'computer_game_board.dart';
-// --- IMPORT YOUR TOKEN PAWN WIDGET ---
 import '../widgets/token_pawn.dart';
 
 class LandingScreen extends StatefulWidget {
@@ -13,8 +16,6 @@ class LandingScreen extends StatefulWidget {
 }
 
 class _LandingScreenState extends State<LandingScreen> {
-  bool _isSoundOn = true;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -41,7 +42,11 @@ class _LandingScreenState extends State<LandingScreen> {
                     ),
                     _buildSmallWoodenBtn(
                       icon: AudioService.isSoundOn ? Icons.volume_up : Icons.volume_off,
-                      onTap: () => setState(() => AudioService.toggleSound()),
+                      onTap: () {
+                        setState(() {
+                          AudioService.toggleSound();
+                        });
+                      },
                     ),
                   ],
                 ),
@@ -115,7 +120,8 @@ class _LandingScreenState extends State<LandingScreen> {
                       subtitle: "Offline Mode",
                       icon: Icons.computer,
                       color: const Color(0xFFE53935),
-                      onTap: () => _showColorPickerDialog(context), // Open Color Picker
+                      // FIX: Open the Dialog first
+                      onTap: () => _showColorPickerDialog(context),
                     ),
                   ],
                 ),
@@ -142,7 +148,7 @@ class _LandingScreenState extends State<LandingScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFD7CCC8), // Light Wood Color
+        backgroundColor: const Color(0xFFD7CCC8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(15),
           side: const BorderSide(color: Color(0xFF5D4037), width: 3),
@@ -163,7 +169,6 @@ class _LandingScreenState extends State<LandingScreen> {
             ),
             const SizedBox(height: 25),
 
-            // Row 1
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -173,7 +178,6 @@ class _LandingScreenState extends State<LandingScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Row 2
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -188,18 +192,27 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   // --- PAWN SELECTION BUTTON HELPER ---
+  // --- PAWN SELECTION BUTTON HELPER ---
   Widget _pawnSelectionBtn(BuildContext ctx, String colorName) {
     return GestureDetector(
       onTap: () {
-        Navigator.pop(ctx);
+        Navigator.pop(ctx); // Close Dialog
+
+        // --- FIX: REMOVED THE BLOC CALL HERE ---
+        // We do NOT start the game here. The ComputerGameBoard creates the Bloc.
+
+        // Just Navigate:
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ComputerGameBoard(userColor: colorName)),
+          MaterialPageRoute(
+            builder: (_) => ComputerGameBoard(
+              userColor: colorName, // Pass the color to the board
+            ),
+          ),
         );
       },
       child: Column(
         children: [
-          // THE 3D PAWN WIDGET
           SizedBox(
             width: 50,
             height: 50,
@@ -207,11 +220,10 @@ class _LandingScreenState extends State<LandingScreen> {
               colorName: colorName,
               tokenIndex: 0,
               isDimmed: false,
-              showNumber: false, // <--- THIS HIDES THE NUMBER!
+              showNumber: false,
             ),
           ),
           const SizedBox(height: 8),
-          // Label
           Text(
             colorName,
             style: const TextStyle(
@@ -223,7 +235,7 @@ class _LandingScreenState extends State<LandingScreen> {
       ),
     );
   }
-  // --- OTHER WIDGET HELPERS (Unchanged) ---
+  // --- OTHER WIDGET HELPERS ---
   Widget _buildMainButton(BuildContext context, {required String title, required String subtitle, required IconData icon, required Color color, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,

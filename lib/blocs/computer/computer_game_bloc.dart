@@ -3,219 +3,159 @@ import 'dart:math';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/game_model.dart';
 import '../../logic/game_engine.dart';
-import '../../services/audio_service.dart'; // <--- Ensure AudioService is imported
 import '../game/game_event.dart';
 import '../game/game_state.dart';
 
 class ComputerGameBloc extends Bloc<GameEvent, GameState> {
   final GameEngine _engine = GameEngine();
-  final String humanId = "HUMAN_PLAYER";
-  final String botId = "COMPUTER_BOT";
 
-  ComputerGameBloc() : super(GameInitial()) {
+  // Internal state
+  GameModel _currentGame;
+
+  ComputerGameBloc()
+      : _currentGame = GameModel(
+    gameId: "OFFLINE",
+    status: 'initial',
+    currentTurn: 0,
+    diceValue: 0,
+    diceRolledBy: '',
+    winners: [],
+    players: [],
+    tokens: {
+      'Red': [0,0,0,0],
+      'Green': [0,0,0,0],
+      'Yellow': [0,0,0,0],
+      'Blue': [0,0,0,0],
+    },
+  ),
+        super(GameInitial()) {
+
     on<StartComputerGame>(_onStartComputerGame);
     on<RollDice>(_onRollDice);
     on<MoveToken>(_onMoveToken);
   }
 
-  // 1. START GAME
   void _onStartComputerGame(StartComputerGame event, Emitter<GameState> emit) {
-    String userColor = event.userColor;
-    String botColor;
+    String myColor = event.userColor;
 
-    switch (userColor) {
-      case 'Red': botColor = 'Yellow'; break;
-      case 'Green': botColor = 'Blue'; break;
-      case 'Yellow': botColor = 'Red'; break;
-      case 'Blue': botColor = 'Green'; break;
-      default: botColor = 'Yellow';
-    }
+    // Calculate Computer Color (Opposite side)
+    List<String> colors = ['Red', 'Green', 'Yellow', 'Blue'];
+    int myIndex = colors.indexOf(myColor);
+    int compIndex = (myIndex + 2) % 4;
+    String compColor = colors[compIndex];
 
-    Map<String, List<int>> tokens = {
-      'Red': [0, 0, 0, 0],
-      'Green': [0, 0, 0, 0],
-      'Yellow': [0, 0, 0, 0],
-      'Blue': [0, 0, 0, 0],
-    };
-
+    // Setup Players (User is always Index 0)
     List<Map<String, dynamic>> players = [
-      {'id': humanId, 'name': 'You', 'color': userColor, 'type': 'human'},
-      {'id': botId, 'name': 'Computer', 'color': botColor, 'type': 'bot'},
+      {'id': 'User', 'name': 'You', 'color': myColor, 'isAuto': false},
+      {'id': 'Comp1', 'name': 'Computer', 'color': compColor, 'isAuto': true},
     ];
 
-    // Initialize Game Model
-    final game = GameModel(
+    _currentGame = GameModel(
       gameId: "OFFLINE",
-      status: "playing",
+      status: 'playing',
       currentTurn: 0,
       diceValue: 0,
-      diceRolledBy: "",
-      tokens: tokens,
-      players: players,
+      diceRolledBy: '',
       winners: [],
+      players: players,
+      tokens: {
+        'Red': [0,0,0,0],
+        'Green': [0,0,0,0],
+        'Yellow': [0,0,0,0],
+        'Blue': [0,0,0,0],
+      },
     );
 
-    emit(GameLoaded(game));
+    emit(GameLoaded(_currentGame));
   }
 
-  // 2. ROLL DICE
   Future<void> _onRollDice(RollDice event, Emitter<GameState> emit) async {
-    if (state is! GameLoaded) return;
-
-    // --- DEFINING 'game' HERE IS CRITICAL ---
-    final currentState = state as GameLoaded;
-    var game = currentState.gameModel;
-
-    if (game.status == 'finished') return;
-
-    // BOT SOUND CHECK
-    if (game.players[game.currentTurn]['type'] == 'bot') {
-      AudioService.playRoll();
-    }
-
-    // Generate Roll
     int roll = Random().nextInt(6) + 1;
 
-    // Update State
-    game = game.copyWith(
-      diceValue: roll,
-      diceRolledBy: game.players[game.currentTurn]['id'],
+    _currentGame = _currentGame.copyWith(
+        diceValue: roll,
+        diceRolledBy: _currentGame.players[_currentGame.currentTurn]['id']
     );
-    emit(GameLoaded(game));
+    emit(GameLoaded(_currentGame));
 
-    // Check Logic
-    String color = game.players[game.currentTurn]['color'];
-    bool canMove = _canAnyTokenMove(game.tokens[color]!, roll, color);
+    bool isComputer = _currentGame.players[_currentGame.currentTurn]['isAuto'];
 
-    if (!canMove) {
+    // AI Logic
+    int bestTokenIndex = _engine.pickBestTokenIndex(_currentGame, roll);
+
+    if (bestTokenIndex == -1) {
+      // No Move Possible -> Next Turn
       await Future.delayed(const Duration(seconds: 1));
-      add(MoveToken(gameId: "OFFLINE", userId: "AUTO", tokenIndex: -1));
-    } else if (game.players[game.currentTurn]['type'] == 'bot') {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      int bestTokenIndex = _findBestBotMove(game, roll);
-      add(MoveToken(gameId: "OFFLINE", userId: botId, tokenIndex: bestTokenIndex));
+      _nextTurn(emit);
+    } else {
+      if (isComputer) {
+        // AI Turn
+        await Future.delayed(const Duration(milliseconds: 1000));
+        add(MoveToken(gameId: "OFFLINE", userId: "Comp1", tokenIndex: bestTokenIndex));
+      }
+      // Human Turn (Wait for tap)
     }
   }
 
-  // 3. MOVE TOKEN
-  Future<void> _onMoveToken(MoveToken event, Emitter<GameState> emit) async {
-    if (state is! GameLoaded) return;
+  void _onMoveToken(MoveToken event, Emitter<GameState> emit) {
+    // --- FIX 1: Capture the roll BEFORE resetting it ---
+    int currentRoll = _currentGame.diceValue;
 
-    // --- DEFINING 'game' HERE IS CRITICAL ---
-    final currentState = state as GameLoaded;
-    var game = currentState.gameModel;
-
-    // Handle Skip Turn
-    if (event.tokenIndex == -1) {
-      int nextTurn = (game.currentTurn + 1) % game.players.length;
-      game = game.copyWith(diceValue: 0, currentTurn: nextTurn);
-      emit(GameLoaded(game));
-      _checkBotTurn(game);
-      return;
-    }
-
-    // Calculate Logic
-    String color = game.players[game.currentTurn]['color'];
-    List<int> tokens = List.from(game.tokens[color]!);
+    String color = _currentGame.players[_currentGame.currentTurn]['color'];
+    List<int> tokens = List.from(_currentGame.tokens[color]!);
     int currentPos = tokens[event.tokenIndex];
-    int newPos = _engine.calculateNextPosition(currentPos, game.diceValue, color);
+    int newPos = _engine.calculateNextPosition(currentPos, currentRoll, color);
 
-    if (newPos == currentPos) return;
-
-    // Apply Move
     tokens[event.tokenIndex] = newPos;
-    Map<String, List<int>> allTokens = Map.from(game.tokens);
+    Map<String, List<int>> allTokens = Map.from(_currentGame.tokens);
     allTokens[color] = tokens;
 
-    // Kill Check & Sound
-    String prevTokensStr = allTokens.toString();
+    // Kill Logic
     allTokens = _engine.checkKill(allTokens, color, newPos);
 
-    if (allTokens.toString() != prevTokensStr) {
-      AudioService.playKill();
-    } else {
-      AudioService.playMove();
+    // Win Logic
+    bool hasWon = allTokens[color]!.every((pos) => pos == 99);
+    List<String> currentWinners = List.from(_currentGame.winners);
+    if (hasWon && !currentWinners.contains(color)) {
+      currentWinners.add(color);
     }
 
-    // Win Check
-    bool hasWon = tokens.every((pos) => pos == 99);
-    List<String> currentWinners = List.from(game.winners);
-
-    if (hasWon) {
-      AudioService.playWin();
-
-      String playerId = game.players[game.currentTurn]['id'];
-      if (!currentWinners.contains(playerId)) {
-        currentWinners.add(playerId);
-      }
-
-      // End Game
-      game = game.copyWith(
-        tokens: allTokens,
-        diceValue: 0,
-        status: 'finished',
-        winners: currentWinners,
-      );
-      emit(GameLoaded(game));
-      return;
-    }
-
-    // Next Turn Calculation
-    int nextTurn = game.currentTurn;
-    if (game.diceValue != 6) {
-      nextTurn = (game.currentTurn + 1) % game.players.length;
-    }
-
-    // Update State
-    game = game.copyWith(
+    _currentGame = _currentGame.copyWith(
       tokens: allTokens,
-      diceValue: 0,
-      currentTurn: nextTurn,
+      diceValue: 0, // Reset dice to 0
       winners: currentWinners,
     );
 
-    emit(GameLoaded(game));
-    _checkBotTurn(game);
+    emit(GameLoaded(_currentGame));
+
+    // --- FIX 2: Check 'currentRoll' (which holds the 6), not '_currentGame.diceValue' (which is 0) ---
+    if (currentRoll != 6 && !hasWon) {
+      _nextTurn(emit);
+    } else {
+      // ROLLED A 6: Same player keeps turn!
+
+      // If computer rolled 6, trigger another roll automatically
+      if (_currentGame.players[_currentGame.currentTurn]['isAuto']) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!isClosed) add(const RollDice("OFFLINE"));
+        });
+      }
+      // If Human rolled 6, we do nothing (Game waits for you to click Dice again)
+    }
   }
 
-  void _checkBotTurn(GameModel game) {
-    if (game.status == 'finished') return;
-    if (game.players[game.currentTurn]['type'] == 'bot') {
-      Future.delayed(const Duration(seconds: 1), () {
-        add(RollDice("OFFLINE"));
+  void _nextTurn(Emitter<GameState> emit) {
+    int next = (_currentGame.currentTurn + 1) % _currentGame.players.length;
+    _currentGame = _currentGame.copyWith(
+      currentTurn: next,
+      diceValue: 0,
+    );
+    emit(GameLoaded(_currentGame));
+
+    if (_currentGame.players[next]['isAuto']) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!isClosed) add(const RollDice("OFFLINE"));
       });
     }
-  }
-
-  // --- HELPERS ---
-  bool _canAnyTokenMove(List<int> tokens, int dice, String color) {
-    for (int pos in tokens) {
-      if (_engine.calculateNextPosition(pos, dice, color) != pos) return true;
-    }
-    return false;
-  }
-
-  int _findBestBotMove(GameModel game, int dice) {
-    String color = game.players[game.currentTurn]['color'];
-    List<int> tokens = game.tokens[color]!;
-
-    // Priority: Kill
-    for(int i=0; i<4; i++) {
-      int next = _engine.calculateNextPosition(tokens[i], dice, color);
-      Map<String, List<int>> tempTokens = Map.from(game.tokens);
-      tempTokens[color] = List.from(tokens)..[i] = next;
-      if (_engine.checkKill(tempTokens, color, next).toString() != tempTokens.toString()) return i;
-    }
-
-    // Priority: Home
-    for (int i = 0; i < 4; i++) {
-      if (tokens[i] == 0 && dice == 6) return i;
-    }
-
-    // Priority: Any Move
-    for(int i=0; i<4; i++) {
-      if (_engine.calculateNextPosition(tokens[i], dice, color) != tokens[i]) return i;
-    }
-    return 0;
   }
 }
