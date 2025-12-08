@@ -76,7 +76,8 @@ class FirebaseService {
       // --- KILL LOGIC START ---
       // Before moving, check if we land on someone (unless it's a Star/Safe spot)
       // For simplicity, we assume hitting an enemy anywhere (except 0 or 99) kills them.
-      if (newValue != 0 && newValue != 99) {
+      List<int> safeSpots = [1, 9, 14, 22, 27, 35, 40, 48];
+      if (newValue != 0 && newValue != 99 && !safeSpots.contains(newValue)) {
         tokens.forEach((otherColor, positions) {
           if (otherColor != playerColor) {
             List<int> enemyTokens = List<int>.from(positions);

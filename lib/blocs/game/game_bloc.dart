@@ -19,8 +19,8 @@ class GameBloc extends Bloc<GameEvent, GameState> {
     // 1. Load Game (Stream)
     on<LoadGame>((event, emit) async {
       await emit.forEach(
-        _firebaseService.streamGame(event.gameId),
-        onData: (GameModel game) => GameLoaded(game),
+        _firebaseService.streamGame(event.gameId), // <--- THE LISTENER
+        onData: (GameModel game) => GameLoaded(game), // <--- THE UPDATE
         onError: (_, __) => const GameError(),
       );
     });
