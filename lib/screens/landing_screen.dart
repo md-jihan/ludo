@@ -5,7 +5,7 @@ import '../blocs/game/game_bloc.dart'; // Needed for StartComputerGame event
 import '../blocs/game/game_event.dart';
 import '../services/audio_service.dart';
 import 'home_menu.dart';
-import 'computer_game_board.dart';
+import 'computer_game_board.dart' hide ComputerGameBloc;
 import '../widgets/token_pawn.dart';
 
 class LandingScreen extends StatefulWidget {
@@ -66,7 +66,7 @@ class _LandingScreenState extends State<LandingScreen> {
                   children: [
                     Icon(Icons.casino, size: 50, color: Color(0xFF3E2723)),
                     Text(
-                      "LUDO\nMASTER",
+                      "GRIB\nLUDO",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 40,
@@ -338,3 +338,4 @@ class _LandingScreenState extends State<LandingScreen> {
     );
   }
 }
+

@@ -5,11 +5,12 @@ import '../../models/game_model.dart';
 import '../../logic/game_engine.dart';
 import '../game/game_event.dart';
 import '../game/game_state.dart';
+import '../../services/audio_service.dart'; // Ensure AudioService is imported for sounds
 
 class ComputerGameBloc extends Bloc<GameEvent, GameState> {
   final GameEngine _engine = GameEngine();
 
-  // Internal state
+  // Internal state tracker
   GameModel _currentGame;
 
   ComputerGameBloc()
@@ -38,13 +39,13 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
   void _onStartComputerGame(StartComputerGame event, Emitter<GameState> emit) {
     String myColor = event.userColor;
 
-    // Calculate Computer Color (Opposite side)
+    // 1. Calculate Computer Color (Opposite side)
     List<String> colors = ['Red', 'Green', 'Yellow', 'Blue'];
     int myIndex = colors.indexOf(myColor);
     int compIndex = (myIndex + 2) % 4;
     String compColor = colors[compIndex];
 
-    // Setup Players (User is always Index 0)
+    // 2. Setup Players
     List<Map<String, dynamic>> players = [
       {'id': 'User', 'name': 'You', 'color': myColor, 'isAuto': false},
       {'id': 'Comp1', 'name': 'Computer', 'color': compColor, 'isAuto': true},
@@ -70,6 +71,12 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
   }
 
   Future<void> _onRollDice(RollDice event, Emitter<GameState> emit) async {
+    // STOP if game is finished
+    if (_currentGame.status == 'finished') return;
+
+    // Play Sound
+    AudioService.playRoll();
+
     int roll = Random().nextInt(6) + 1;
 
     _currentGame = _currentGame.copyWith(
@@ -80,7 +87,7 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
 
     bool isComputer = _currentGame.players[_currentGame.currentTurn]['isAuto'];
 
-    // AI Logic
+    // Ask Engine for Best Move
     int bestTokenIndex = _engine.pickBestTokenIndex(_currentGame, roll);
 
     if (bestTokenIndex == -1) {
@@ -89,16 +96,16 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
       _nextTurn(emit);
     } else {
       if (isComputer) {
-        // AI Turn
+        // Computer moves automatically
         await Future.delayed(const Duration(milliseconds: 1000));
         add(MoveToken(gameId: "OFFLINE", userId: "Comp1", tokenIndex: bestTokenIndex));
       }
-      // Human Turn (Wait for tap)
+      // Human waits for tap input
     }
   }
 
   void _onMoveToken(MoveToken event, Emitter<GameState> emit) {
-    // --- FIX 1: Capture the roll BEFORE resetting it ---
+    // Capture roll before resetting
     int currentRoll = _currentGame.diceValue;
 
     String color = _currentGame.players[_currentGame.currentTurn]['color'];
@@ -110,41 +117,54 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
     Map<String, List<int>> allTokens = Map.from(_currentGame.tokens);
     allTokens[color] = tokens;
 
-    // Kill Logic
+    // Handle Kill
     allTokens = _engine.checkKill(allTokens, color, newPos);
 
-    // Win Logic
+    // --- WIN CONDITION CHECK ---
+    // Check if ALL 4 tokens for this color are at 99
     bool hasWon = allTokens[color]!.every((pos) => pos == 99);
+
     List<String> currentWinners = List.from(_currentGame.winners);
     if (hasWon && !currentWinners.contains(color)) {
       currentWinners.add(color);
     }
 
+    // --- GAME OVER LOGIC ---
+    String newStatus = _currentGame.status;
+    if (currentWinners.isNotEmpty) {
+      newStatus = 'finished'; // <--- THIS TRIGGERS THE UI DIALOG
+    }
+
     _currentGame = _currentGame.copyWith(
       tokens: allTokens,
-      diceValue: 0, // Reset dice to 0
+      diceValue: 0, // Reset dice
       winners: currentWinners,
+      status: newStatus,
     );
 
     emit(GameLoaded(_currentGame));
 
-    // --- FIX 2: Check 'currentRoll' (which holds the 6), not '_currentGame.diceValue' (which is 0) ---
+    // IF GAME FINISHED: STOP HERE
+    if (newStatus == 'finished') {
+      return;
+    }
+
+    // Normal Turn Logic
     if (currentRoll != 6 && !hasWon) {
       _nextTurn(emit);
     } else {
-      // ROLLED A 6: Same player keeps turn!
-
-      // If computer rolled 6, trigger another roll automatically
+      // Rolled 6 or Won a pawn: Play again
       if (_currentGame.players[_currentGame.currentTurn]['isAuto']) {
         Future.delayed(const Duration(milliseconds: 500), () {
           if (!isClosed) add(const RollDice("OFFLINE"));
         });
       }
-      // If Human rolled 6, we do nothing (Game waits for you to click Dice again)
     }
   }
 
   void _nextTurn(Emitter<GameState> emit) {
+    if (_currentGame.status == 'finished') return;
+
     int next = (_currentGame.currentTurn + 1) % _currentGame.players.length;
     _currentGame = _currentGame.copyWith(
       currentTurn: next,
@@ -152,6 +172,7 @@ class ComputerGameBloc extends Bloc<GameEvent, GameState> {
     );
     emit(GameLoaded(_currentGame));
 
+    // If next player is Computer, auto-roll
     if (_currentGame.players[next]['isAuto']) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!isClosed) add(const RollDice("OFFLINE"));

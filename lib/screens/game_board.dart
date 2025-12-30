@@ -7,6 +7,7 @@ import '../blocs/game/game_state.dart';
 import '../models/game_model.dart';
 import '../widgets/board_layout.dart';
 import '../widgets/dice_widget.dart';
+import '../services/audio_service.dart'; // IMPORT THIS
 
 class GameBoard extends StatefulWidget {
   final String gameId;
@@ -20,11 +21,25 @@ class GameBoard extends StatefulWidget {
 
 class _GameBoardState extends State<GameBoard> {
   final Set<String> _notifiedLeftPlayers = {};
-
-  // Track winners we have already notified about (for the Mini Dialog)
   final Set<String> _notifiedWinners = {};
-
   bool _celebrationShown = false;
+
+  // --- NEW: SETTINGS STATE ---
+  bool _isSettingsOpen = false;
+  bool _isSoundOn = AudioService.isSoundOn;
+
+  void _toggleSettings() {
+    setState(() {
+      _isSettingsOpen = !_isSettingsOpen;
+    });
+  }
+
+  void _toggleSound(bool value) {
+    setState(() {
+      _isSoundOn = value;
+      AudioService.isSoundOn = value; // Update Global Service
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,14 +59,11 @@ class _GameBoardState extends State<GameBoard> {
             }
           }
 
-          // B. MINI DIALOG (For OTHER players winning)
-          // If a new winner appears, and it is NOT me, show a quick popup
+          // B. MINI DIALOG
           for (String winnerId in game.winners) {
             if (!_notifiedWinners.contains(winnerId)) {
               _notifiedWinners.add(winnerId);
-
               if (winnerId != widget.userId) {
-                // Find name
                 final winner = players.firstWhere((p) => p['id'] == winnerId, orElse: () => {'name': 'Unknown'});
                 _showMiniWinNotification(winner['name']);
               }
@@ -71,7 +83,7 @@ class _GameBoardState extends State<GameBoard> {
             }
           }
 
-          // D. Game Over (Empty Room)
+          // D. Game Over
           int activePlayers = players.where((p) => p['hasLeft'] != true).length;
           if (players.length > 1 && activePlayers < 2 && game.status != 'finished') {
             _showGameOverDialog();
@@ -86,120 +98,193 @@ class _GameBoardState extends State<GameBoard> {
           final String turnName = currentPlayer['name'] ?? turnColor;
 
           return Scaffold(
-            // 1. OPACITY FIX
             body: Container(
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: AssetImage('assets/wood.png'),
                   fit: BoxFit.cover,
-                  opacity: 1, // <--- CHANGED TO 0.25 AS REQUESTED
+                  opacity: 1,
                 ),
               ),
               child: SafeArea(
-                child: Column(
+                // --- CHANGE 1: WRAP IN STACK ---
+                child: Stack(
                   children: [
-                    // App Bar
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-                      decoration: _woodenBoxDecoration(),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text("Ludo", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF3E2723))),
-                          IconButton(
-                            icon: const Icon(Icons.exit_to_app, color: Color(0xFF8D6E63), size: 30),
-                            onPressed: () => _showLeaveConfirmDialog(game),
-                          )
-                        ],
-                      ),
-                    ),
-
-                    // Status
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 40),
-                      padding: const EdgeInsets.all(10),
-                      decoration: _woodenBoxDecoration(),
-                      child: Center(
-                        child: RichText(
-                          text: TextSpan(
-                            style: const TextStyle(fontSize: 18, color: Color(0xFF3E2723), fontFamily: 'Courier', fontWeight: FontWeight.bold),
+                    // --- LAYER 1: GAME UI ---
+                    Column(
+                      children: [
+                        // App Bar
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                          decoration: _woodenBoxDecoration(),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const TextSpan(text: "Waiting for "),
-                              TextSpan(
-                                text: "$turnName's",
-                                style: TextStyle(color: _getColor(turnColor), fontSize: 20, fontWeight: FontWeight.w900),
-                              ),
-                              const TextSpan(text: " move"),
+                              const Text("Ludo", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF3E2723))),
+
+                              // Right Side Buttons
+                              Row(
+                                children: [
+                                  // SETTINGS ICON
+                                  GestureDetector(
+                                    onTap: _toggleSettings,
+                                    child: const Icon(Icons.settings, color: Color(0xFF8D6E63), size: 30),
+                                  ),
+                                  const SizedBox(width: 15),
+                                  // EXIT ICON
+                                  IconButton(
+                                    icon: const Icon(Icons.exit_to_app, color: Color(0xFF8D6E63), size: 30),
+                                    onPressed: () => _showLeaveConfirmDialog(game),
+                                  ),
+                                ],
+                              )
                             ],
                           ),
                         ),
-                      ),
+
+                        // Status
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 40),
+                          padding: const EdgeInsets.all(10),
+                          decoration: _woodenBoxDecoration(),
+                          child: Center(
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(fontSize: 18, color: Color(0xFF3E2723), fontFamily: 'Courier', fontWeight: FontWeight.bold),
+                                children: [
+                                  const TextSpan(text: "Waiting for "),
+                                  TextSpan(
+                                    text: "$turnName's",
+                                    style: TextStyle(color: _getColor(turnColor), fontSize: 20, fontWeight: FontWeight.w900),
+                                  ),
+                                  const TextSpan(text: " move"),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        // Board
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, spreadRadius: 2)],
+                              ),
+                              child: BoardLayout(gameModel: game, currentUserId: widget.userId),
+                            ),
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        // Controls
+                        Container(
+                          height: 140,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFF3E2723).withOpacity(0.8),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                              border: const Border(top: BorderSide(color: Color(0xFF8D6E63), width: 4))
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                decoration: _woodenBoxDecoration(),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text("You are:", style: TextStyle(color: Color(0xFF3E2723), fontSize: 12)),
+                                    Text(_getMyColor(game, widget.userId), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF3E2723))),
+                                  ],
+                                ),
+                              ),
+
+                              // DICE
+                              Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20)
+                                  ),
+                                  child: DiceWidget(
+                                    value: game.diceValue,
+                                    isMyTurn: game.players[game.currentTurn]['id'] == widget.userId,
+                                    onRoll: () {
+                                      context.read<GameBloc>().add(RollDice(game.gameId));
+                                    },
+                                  )
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
 
-                    const Spacer(),
-
-                    // Board
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, spreadRadius: 2)],
-                          ),
-                          child: BoardLayout(gameModel: game, currentUserId: widget.userId),
+                    // --- LAYER 2: SLIDING SETTINGS PANEL ---
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      top: _isSettingsOpen ? 80 : -150, // Slides down below app bar
+                      left: 20,
+                      right: 20,
+                      child: Container(
+                        height: 80,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD7CCC8), // Wood theme
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: const Color(0xFF5D4037), width: 3),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 5))
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.volume_up, color: Color(0xFF3E2723), size: 30),
+                                SizedBox(width: 15),
+                                Text(
+                                  "Sound",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF3E2723),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Switch(
+                              value: _isSoundOn,
+                              activeColor: const Color(0xFF2E7D32),
+                              activeTrackColor: const Color(0xFFA5D6A7),
+                              inactiveThumbColor: const Color(0xFF5D4037),
+                              inactiveTrackColor: const Color(0xFFBCAAA4),
+                              onChanged: _toggleSound,
+                            ),
+                          ],
                         ),
                       ),
                     ),
 
-                    const Spacer(),
-
-                    // Controls
-                    Container(
-                      height: 140,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF3E2723).withOpacity(0.8),
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-                          border: const Border(top: BorderSide(color: Color(0xFF8D6E63), width: 4))
+                    // --- LAYER 3: CLICK OUTSIDE TO CLOSE ---
+                    if (_isSettingsOpen)
+                      Positioned.fill(
+                        top: 160, // Start below the panel
+                        child: GestureDetector(
+                          onTap: _toggleSettings,
+                          behavior: HitTestBehavior.translucent,
+                          child: Container(color: Colors.transparent),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            decoration: _woodenBoxDecoration(),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text("You are:", style: TextStyle(color: Color(0xFF3E2723), fontSize: 12)),
-                                Text(_getMyColor(game, widget.userId), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF3E2723))),
-                              ],
-                            ),
-                          ),
-                          // Inside lib/screens/game_board.dart
-
-// ... (Inside the Row of controls) ...
-                          Container(
-                              padding: const EdgeInsets.all(5),
-                              decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20)
-                              ),
-
-                              // USE THE UNIVERSAL DICE WIDGET HERE
-                              child: DiceWidget(
-                                value: game.diceValue, // 1. Pass Value
-                                isMyTurn: game.players[game.currentTurn]['id'] == widget.userId, // 2. Check Turn
-                                onRoll: () {
-                                  // 3. Trigger Online Event
-                                  context.read<GameBloc>().add(RollDice(game.gameId));
-                                },
-                              )
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -235,16 +320,13 @@ class _GameBoardState extends State<GameBoard> {
     return Colors.black;
   }
 
-  // --- DIALOGS & OVERLAYS ---
-
-  // 1. MINI DIALOG (3 Seconds)
+  // --- DIALOGS (Keep your existing ones) ---
   void _showMiniWinNotification(String winnerName) {
     showDialog(
       context: context,
-      barrierColor: Colors.transparent, // Don't block screen
+      barrierColor: Colors.transparent,
       barrierDismissible: false,
       builder: (ctx) {
-        // Auto-close after 3 seconds
         Future.delayed(const Duration(seconds: 3), () {
           if (ctx.mounted) Navigator.of(ctx).pop();
         });
@@ -277,13 +359,10 @@ class _GameBoardState extends State<GameBoard> {
     );
   }
 
-  // 2. MAIN CELEBRATION (Stay or Exit)
   void _showCelebrationDialog(int rank, bool isLoser, int totalPlayers) {
     String title = isLoser ? "😢 YOU LOST 😢" : "🏆 WINNER 🏆";
     String message = isLoser ? "Better luck next time!" : "You finished rank #$rank!";
     Color color = isLoser ? Colors.red : Colors.amber;
-
-    // Logic: If only 2 players, Game Over immediately. If >2, can stay.
     bool canStay = (totalPlayers > 2);
 
     showDialog(
@@ -318,8 +397,6 @@ class _GameBoardState extends State<GameBoard> {
                 },
                 child: const Text("EXIT GAME", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ),
-
-              // Only show "OK" (Stay) if more than 2 players
               if (canStay)
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3E2723)),

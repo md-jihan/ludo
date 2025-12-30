@@ -31,11 +31,13 @@ class ComputerBoardLayout extends StatelessWidget {
           height: boardSize,
           child: Stack(
             children: [
+              // 1. Board Painter
               Positioned.fill(
                 child: CustomPaint(
                   painter: LudoBoardPainter(players: gameModel.players),
                 ),
               ),
+              // 2. Tokens (Sorted so active turn is on top)
               ..._buildTokens(context, gameModel.tokens, cellSize, tokenSize),
             ],
           ),
@@ -44,72 +46,108 @@ class ComputerBoardLayout extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildTokens(BuildContext context, Map<String, List<int>> allTokens, double cellSize, double tokenSize) {
-    List<Widget> widgets = [];
+  List<Widget> _buildTokens(BuildContext context, Map<String, List<int>> allTokensMap, double cellSize, double tokenSize) {
+    List<Map<String, dynamic>> tokenDataList = [];
 
-    allTokens.forEach((color, positions) {
+    allTokensMap.forEach((color, positions) {
       for (int i = 0; i < positions.length; i++) {
-        int currentPos = positions[i];
-
-        widgets.add(
-          AnimatedToken(
-            // Key is crucial to prevent "Ghost" animations on rebuild
-            key: ValueKey("$color-$i"),
-
-            colorName: color,
-            tokenIndex: i,
-            currentPosition: currentPos,
-            isDimmed: gameModel.diceValue == 0 || currentPos == 99,
-            cellSize: cellSize,
-            tokenSize: tokenSize,
-            onTap: () => _handleTap(context, color, i, currentPos),
-          ),
-        );
+        tokenDataList.add({
+          'color': color,
+          'index': i,
+          'pos': positions[i],
+        });
       }
     });
-    return widgets;
+
+    // LAYER FIX: Sort so current player's tokens are drawn LAST (on top)
+    final currentPlayerColor = gameModel.players[gameModel.currentTurn]['color'];
+
+    tokenDataList.sort((a, b) {
+      if (a['color'] == currentPlayerColor && b['color'] != currentPlayerColor) return 1;
+      if (a['color'] != currentPlayerColor && b['color'] == currentPlayerColor) return -1;
+      return 0;
+    });
+
+    return tokenDataList.map((token) {
+      String color = token['color'];
+      int i = token['index'];
+      int currentPos = token['pos'];
+
+      return AnimatedToken(
+        key: ValueKey("comp-$color-$i"),
+        colorName: color,
+        tokenIndex: i,
+        currentPosition: currentPos,
+        // Dim if dice not rolled, or if pawn is already finished (99)
+        isDimmed: gameModel.diceValue == 0 || currentPos == 99,
+        cellSize: cellSize,
+        tokenSize: tokenSize,
+        onTap: () => _handleTap(context, color, i, currentPos),
+      );
+    }).toList();
   }
 
   void _handleTap(BuildContext context, String clickedPawnColor, int index, int currentPos) {
-    // 1. Check if it's My Color
+    // 1. Check Ownership
     final myPlayer = gameModel.players.firstWhere(
             (p) => p['id'] == currentUserId,
         orElse: () => {'color': 'Spectator'}
     );
     String myColor = myPlayer['color'];
-    if (clickedPawnColor != myColor) return;
 
-    // 2. Check if Dice is Rolled
-    if (gameModel.diceValue == 0) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Roll the dice first!"), duration: Duration(milliseconds: 500)));
-      return;
-    }
-
-    // 3. Check if it is CURRENTLY My Turn
+    // Safety check turn
     final currentPlayer = gameModel.players[gameModel.currentTurn];
-    if (currentPlayer['id'] != currentUserId) return;
 
-    // 4. Validate Move (Engine)
-    int nextPos = _engine.calculateNextPosition(currentPos, gameModel.diceValue, clickedPawnColor);
-    if (nextPos == currentPos) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("Invalid move!"),
-              duration: Duration(milliseconds: 500)
-          )
-      );
+    // Must be My Color AND My Turn
+    if (clickedPawnColor != myColor || currentPlayer['id'] != currentUserId) return;
+
+    // 2. Check if Finished
+    if (currentPos == 99) {
+      _showSnack(context, "This pawn has finished!");
       return;
     }
 
-    // 5. Send Move
+    // 3. Dice check
+    if (gameModel.diceValue == 0) {
+      _showSnack(context, "Roll the dice first!");
+      return;
+    }
+
+    // 4. Validate Move logic
+    int nextPos = _engine.calculateNextPosition(currentPos, gameModel.diceValue, clickedPawnColor);
+
+    // If nextPos == currentPos, the engine says "Move Impossible"
+    if (nextPos == currentPos) {
+      // Provide smart feedback
+      List<int> gateData = _engine.getHomeEntrance(clickedPawnColor);
+      int homeStart = gateData[1];
+      int homeEnd = gateData[2];
+
+      // If user is inside the home stretch, calculate needed roll
+      if (currentPos >= homeStart && currentPos <= homeEnd) {
+        // homeEnd + 1 is the victory step
+        int stepsNeeded = (homeEnd - currentPos) + 1;
+        _showSnack(context, "You need a $stepsNeeded to win!");
+      } else {
+        _showSnack(context, "Invalid move!");
+      }
+      return;
+    }
+
+    // 5. Dispatch move
     context.read<ComputerGameBloc>().add(
       MoveToken(
         gameId: gameModel.gameId,
         userId: currentUserId,
         tokenIndex: index,
       ),
+    );
+  }
+
+  void _showSnack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(milliseconds: 700))
     );
   }
 }
