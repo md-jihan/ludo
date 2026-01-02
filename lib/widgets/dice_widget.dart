@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import '../services/audio_service.dart';
 
 class DiceWidget extends StatefulWidget {
-  final int value;           // Dice Value (1-6)
-  final bool isMyTurn;       // Can I click it?
-  final VoidCallback onRoll; // Tap callback
+  final int value;
+  final bool isMyTurn;
+  final VoidCallback onRoll;
 
   const DiceWidget({
     super.key,
@@ -22,7 +22,8 @@ class DiceWidget extends StatefulWidget {
 class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   Timer? _animTimer;
-  int _displayValue = 1; // Number to show during animation
+  Timer? _safetyTimer; // FIX: Prevents infinite rotation
+  int _displayValue = 1;
   bool _isRolling = false;
   DateTime? _rollStartTime;
 
@@ -33,13 +34,13 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
-    // Initialize display with current value or 1
     _displayValue = widget.value > 0 ? widget.value : 1;
   }
 
   @override
   void dispose() {
     _animTimer?.cancel();
+    _safetyTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -48,26 +49,20 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
   void didUpdateWidget(DiceWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // CASE 1: Dice rolled (0 -> 5)
-    if (widget.value != 0 && oldWidget.value == 0) {
-      if (_isRolling) {
-        // A. I clicked it (Manual Roll) -> Stop smoothly
-        _stopRollingAnim(widget.value);
-      } else {
-        // B. Computer/Opponent rolled (Auto Roll) -> Trigger animation
-        _triggerAutoRoll(widget.value);
-      }
+    // --- FIX 1: ROBUST STOP CONDITION ---
+    // If we are currently rolling, and ANY valid number (1-6) arrives, STOP.
+    // We removed the strict check (oldWidget.value == 0) because fast network updates might skip 0.
+    if (_isRolling && widget.value != 0) {
+      _stopRollingAnim(widget.value);
     }
 
-    // CASE 2: Dice Reset (5 -> 0)
-    if (widget.value == 0 && oldWidget.value != 0) {
-      if (_isRolling) {
-        _stopRollingAnim(_displayValue);
-      }
+    // --- FIX 2: AUTO ROLL TRIGGER ---
+    // If we are NOT rolling, but the value changed (e.g. opponent rolled), trigger auto-roll.
+    else if (!_isRolling && widget.value != 0 && widget.value != oldWidget.value) {
+      _triggerAutoRoll(widget.value);
     }
   }
 
-  // --- MANUAL ROLL (Tap) ---
   void _startRollingAnim() {
     if (_isRolling) return;
 
@@ -78,40 +73,37 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
       _isRolling = true;
     });
 
-    _controller.repeat(); // Start Spinning
+    _controller.repeat();
 
-    // Flip numbers rapidly
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
       if (mounted) setState(() => _displayValue = Random().nextInt(6) + 1);
     });
 
-    // Call Parent Logic
+    // --- FIX 3: SAFETY TIMEOUT ---
+    // If server fails to reply in 3 seconds, stop spinning to prevent "Nonstop Rotation" bug.
+    _safetyTimer?.cancel();
+    _safetyTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isRolling) {
+        _stopRollingAnim(_displayValue); // Stop at random number
+        // Optionally show error snackbar here
+      }
+    });
+
     widget.onRoll();
   }
 
-  // --- AUTO ROLL (Computer/Opponent) ---
   void _triggerAutoRoll(int targetValue) async {
-    // 1. Start Visuals
-    setState(() {
-      _isRolling = true;
-    });
+    setState(() { _isRolling = true; });
     _controller.repeat();
 
-    // Play sound if not already triggered by Bloc (Optional, safer to have it here)
-    // Note: If your Bloc plays sound too, remove this line to avoid double echo.
-    // AudioService.playRoll();
-
-    // 2. Flip numbers
     _animTimer?.cancel();
     _animTimer = Timer.periodic(const Duration(milliseconds: 80), (timer) {
       if (mounted) setState(() => _displayValue = Random().nextInt(6) + 1);
     });
 
-    // 3. Wait 0.5 seconds (Simulate rolling time)
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // 4. Stop on Target
     if (mounted) {
       _animTimer?.cancel();
       _controller.stop();
@@ -124,7 +116,8 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
   }
 
   Future<void> _stopRollingAnim(int finalValue) async {
-    // Force minimum duration for manual rolls
+    _safetyTimer?.cancel(); // Cancel safety timer since we stopped normally
+
     if (_rollStartTime != null) {
       final int minDuration = 500;
       final int elapsed = DateTime.now().difference(_rollStartTime!).inMilliseconds;
@@ -148,10 +141,9 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    // Allow click only if it's My Turn
+    // Check if Dice is "Ready" (Value 0)
     final bool canRoll = widget.isMyTurn && widget.value == 0 && !_isRolling;
 
-    // UI Styling
     final Color boxColor = canRoll ? Colors.white : Colors.grey[300]!;
     final Color dotColor = canRoll ? Colors.black : Colors.grey[600]!;
 
@@ -180,10 +172,10 @@ class _DiceWidgetState extends State<DiceWidget> with SingleTickerProviderStateM
             color: boxColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.grey[700]!, width: 2),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.3), blurRadius: 5, offset: const Offset(2, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 5, offset: const Offset(2, 2))],
           ),
           child: CustomPaint(
-            // Use _displayValue (Animation) or widget.value (Static)
+            // When waiting (value 0), show the last rolled value (_displayValue)
             painter: _DotPainter(_isRolling ? _displayValue : (widget.value == 0 ? _displayValue : widget.value), dotColor),
           ),
         ),
@@ -211,7 +203,7 @@ class _DotPainter extends CustomPainter {
       case 4: dots = [Offset(l, l), Offset(m, l), Offset(l, m), Offset(m, m)]; break;
       case 5: dots = [Offset(l, l), Offset(m, l), Offset(c, c), Offset(l, m), Offset(m, m)]; break;
       case 6: dots = [Offset(l, l), Offset(m, l), Offset(l, c), Offset(m, c), Offset(l, m), Offset(m, m)]; break;
-      default: dots = [Offset(c, c)]; // Fallback
+      default: dots = [Offset(c, c)];
     }
     for (var d in dots) canvas.drawCircle(d, r, paint);
   }

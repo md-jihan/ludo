@@ -36,7 +36,7 @@ class BoardLayout extends StatelessWidget {
                   painter: LudoBoardPainter(players: gameModel.players),
                 ),
               ),
-              // --- CHANGED: Use _buildSortedTokens instead of simple _buildTokens ---
+              // --- FIX: USE SORTED TOKENS METHOD ---
               ..._buildSortedTokens(context, gameModel.tokens, cellSize, tokenSize),
             ],
           ),
@@ -45,11 +45,11 @@ class BoardLayout extends StatelessWidget {
     );
   }
 
-  // --- FIX 2: SORT TOKENS (Layering Fix) ---
+  // --- NEW METHOD: Sorts tokens so Active Player is on TOP ---
   List<Widget> _buildSortedTokens(BuildContext context, Map<String, List<int>> allTokens, double cellSize, double tokenSize) {
     List<Map<String, dynamic>> tokenDataList = [];
 
-    // 1. Flatten Map into a List
+    // 1. Flatten tokens into a list
     allTokens.forEach((color, positions) {
       for (int i = 0; i < positions.length; i++) {
         tokenDataList.add({
@@ -60,25 +60,23 @@ class BoardLayout extends StatelessWidget {
       }
     });
 
-    // 2. Identify the Current Turn Player's Color
+    // 2. Identify Active Player Color
     String currentTurnColor = '';
     if (gameModel.players.isNotEmpty) {
       currentTurnColor = gameModel.players[gameModel.currentTurn]['color'];
     }
 
-    // 3. SORT: Move Current Player's tokens to the END of the list.
-    // In a Stack, the last item is drawn ON TOP.
-    // This ensures that if multiple pawns are on one spot, the active player's pawn is clickable.
+    // 3. SORT: Active Player's tokens go to the END (Top of Stack)
     tokenDataList.sort((a, b) {
       bool aIsCurrent = (a['color'] == currentTurnColor);
       bool bIsCurrent = (b['color'] == currentTurnColor);
 
-      if (aIsCurrent && !bIsCurrent) return 1; // A goes after B
-      if (!aIsCurrent && bIsCurrent) return -1; // B goes after A
-      return 0; // Keep original order
+      if (aIsCurrent && !bIsCurrent) return 1; // A is active -> Draw A Last
+      if (!aIsCurrent && bIsCurrent) return -1; // B is active -> Draw B Last
+      return 0;
     });
 
-    // 4. Build Widgets
+    // 4. Create Widgets
     return tokenDataList.map((data) {
       return _buildSingleToken(context, data['color'], data['index'], data['pos'], cellSize, tokenSize);
     }).toList();
@@ -98,7 +96,7 @@ class BoardLayout extends StatelessWidget {
   }
 
   void _handleTap(BuildContext context, String clickedPawnColor, int index, int currentPos) {
-    // 1. Check if it's My Color
+    // 1. Check Ownership
     final myPlayer = gameModel.players.firstWhere(
             (p) => p['id'] == currentUserId,
         orElse: () => {'color': 'Spectator'}
@@ -106,18 +104,18 @@ class BoardLayout extends StatelessWidget {
     String myColor = myPlayer['color'];
     if (clickedPawnColor != myColor) return;
 
-    // 2. Check if Dice is Rolled
+    // 2. Check Dice
     if (gameModel.diceValue == 0) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Roll the dice first!"), duration: Duration(milliseconds: 500)));
       return;
     }
 
-    // 3. Check if it is CURRENTLY My Turn
+    // 3. Check Turn
     final currentPlayer = gameModel.players[gameModel.currentTurn];
     if (currentPlayer['id'] != currentUserId) return;
 
-    // 4. Validate Move (Engine)
+    // 4. Validate Move
     int nextPos = _engine.calculateNextPosition(currentPos, gameModel.diceValue, clickedPawnColor);
     if (nextPos == currentPos) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
