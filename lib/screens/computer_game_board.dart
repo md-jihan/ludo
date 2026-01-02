@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:ludo/widgets/dice_widget.dart';
+import 'package:ludo/widgets/game_settings_panel.dart';
 import '../blocs/computer/computer_game_bloc.dart';
 import '../blocs/game/game_event.dart';
 import '../blocs/game/game_state.dart';
@@ -283,52 +284,10 @@ class _ComputerViewState extends State<ComputerView> {
                 ),
 
                 // SLIDING SETTINGS
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  top: _isSettingsOpen ? 70 : -150,
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    height: 80,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD7CCC8),
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: const Color(0xFF5D4037), width: 3),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 5))
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.volume_up, color: Color(0xFF3E2723), size: 30),
-                            SizedBox(width: 15),
-                            Text(
-                              "Sound",
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF3E2723),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: _isSoundOn, // Linked to the correct logic
-                          // COLORS
-                          activeThumbColor: const Color(0xFF2E7D32),       // Green (ON)
-                          activeTrackColor: const Color(0xFFA5D6A7),
-                          inactiveThumbColor: const Color(0xFF5D4037), // Brown (OFF)
-                          inactiveTrackColor: const Color(0xFFBCAAA4),
-                          onChanged: _toggleSound,
-                        ),
-                      ],
-                    ),
-                  ),
+                GameSettingsPanel(
+                  isOpen: _isSettingsOpen,
+                  isSoundOn: _isSoundOn,
+                  onToggleSound: _toggleSound,
                 ),
 
                 if (_isSettingsOpen)
