@@ -1,27 +1,41 @@
 import 'package:flutter/material.dart';
+import '../services/audio_service.dart'; // Import to control sound globally
 
-class GameSettingsPanel extends StatelessWidget {
+class GameSettingsPanel extends StatefulWidget {
   final bool isOpen;
-  final bool isSoundOn;
-  final ValueChanged<bool> onToggleSound;
   final double topOpen;
   final double topClosed;
 
   const GameSettingsPanel({
     super.key,
     required this.isOpen,
-    required this.isSoundOn,
-    required this.onToggleSound,
-    this.topOpen = 80,    // Default position when open
+    this.topOpen = 80,     // Default position when open
     this.topClosed = -150, // Default position when hidden
   });
+
+  @override
+  State<GameSettingsPanel> createState() => _GameSettingsPanelState();
+}
+
+class _GameSettingsPanelState extends State<GameSettingsPanel> {
+  // 1. Initialize State from Global Service
+  bool _isSoundOn = AudioService.isSoundOn;
+
+  // 2. Internal Toggle Method
+  void _toggleSound(bool value) {
+    setState(() {
+      _isSoundOn = value;
+      // Update Global Service
+      AudioService.isSoundOn = value;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      top: isOpen ? topOpen : topClosed,
+      top: widget.isOpen ? widget.topOpen : widget.topClosed,
       left: 20,
       right: 20,
       child: Container(
@@ -41,7 +55,7 @@ class GameSettingsPanel extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                    isSoundOn ? Icons.volume_up : Icons.volume_off,
+                    _isSoundOn ? Icons.volume_up : Icons.volume_off,
                     color: const Color(0xFF3E2723),
                     size: 30
                 ),
@@ -57,14 +71,16 @@ class GameSettingsPanel extends StatelessWidget {
               ],
             ),
             Switch(
-              value: isSoundOn,
+              value: _isSoundOn,
               // ON COLORS (Green)
-              activeColor: const Color(0xFF2E7D32),
+              activeThumbColor: const Color(0xFF2E7D32),
               activeTrackColor: const Color(0xFFA5D6A7),
               // OFF COLORS (Brown)
               inactiveThumbColor: const Color(0xFF5D4037),
               inactiveTrackColor: const Color(0xFFBCAAA4),
-              onChanged: onToggleSound,
+
+              // 3. Use Internal Method
+              onChanged: _toggleSound,
             ),
           ],
         ),

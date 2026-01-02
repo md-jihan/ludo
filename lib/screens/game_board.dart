@@ -27,7 +27,6 @@ class _GameBoardState extends State<GameBoard> {
 
   // --- NEW: SETTINGS STATE ---
   bool _isSettingsOpen = false;
-  bool _isSoundOn = AudioService.isSoundOn;
 
   void _toggleSettings() {
     setState(() {
@@ -35,12 +34,7 @@ class _GameBoardState extends State<GameBoard> {
     });
   }
 
-  void _toggleSound(bool value) {
-    setState(() {
-      _isSoundOn = value;
-      AudioService.isSoundOn = value; // Update Global Service
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -230,9 +224,7 @@ class _GameBoardState extends State<GameBoard> {
 
                     // --- LAYER 2: SLIDING SETTINGS PANEL ---
                     GameSettingsPanel(
-                      isOpen: _isSettingsOpen,
-                      isSoundOn: _isSoundOn,
-                      onToggleSound: _toggleSound,
+                      isOpen: _isSettingsOpen
                     ),
                     // --- LAYER 3: CLICK OUTSIDE TO CLOSE ---
                     if (_isSettingsOpen)

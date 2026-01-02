@@ -44,7 +44,6 @@ class _ComputerViewState extends State<ComputerView> {
 
   // --- FIX 1: SYNC LOGIC CORRECTLY ---
   // If 'isMuted' is FALSE, then Sound is ON (true).
-  bool _isSoundOn = AudioService.isSoundOn;
 
   void _toggleSettings() {
     setState(() {
@@ -52,14 +51,7 @@ class _ComputerViewState extends State<ComputerView> {
     });
   }
 
-  void _toggleSound(bool value) {
-    setState(() {
-      _isSoundOn = value;
-      // --- FIX 2: UPDATE SERVICE ---
-      // If Switch is ON (true), Muted is OFF (false).
-      AudioService.isSoundOn = value;
-    });
-  }
+
 
   void _showGameEndDialog(BuildContext context, bool userWon) {
     showDialog(
@@ -285,9 +277,7 @@ class _ComputerViewState extends State<ComputerView> {
 
                 // SLIDING SETTINGS
                 GameSettingsPanel(
-                  isOpen: _isSettingsOpen,
-                  isSoundOn: _isSoundOn,
-                  onToggleSound: _toggleSound,
+                  isOpen: _isSettingsOpen
                 ),
 
                 if (_isSettingsOpen)
